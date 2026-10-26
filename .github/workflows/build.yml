@@ -1,0 +1,74 @@
+name: Build DriveHop
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'tests/**'
+      - '.github/workflows/build.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: drivehop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm test
+
+  build:
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: DriveHop
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify Apple-silicon runner
+        run: |
+          test "$(uname -m)" = "arm64"
+          sw_vers
+      - name: Install native prerequisites
+        run: brew install cmake sdl2 llvm@18 curl libarchive openssl@3 zstd
+      - name: Fetch PS5 React
+        run: git clone --depth 1 https://github.com/JVK3R/ps5-react.git
+      - name: Prepare PS5 React
+        working-directory: ps5-react
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install -r requirements.txt
+          npm ci
+      - name: Build native title
+        working-directory: ps5-react
+        run: PATH="$PWD/.venv/bin:$PATH" npm run build -- --app-dir ../DriveHop/app/drivehop
+      - name: Package verified release
+        run: |
+          test -d ps5-react/dist/PPSA99777
+          mkdir release
+          ditto -c -k --sequesterRsrc --keepParent ps5-react/dist/PPSA99777 release/DriveHop-PPSA99777-v0.2.0.zip
+          git -C DriveHop archive --format=zip --output=../release/DriveHop-source-v0.2.0.zip HEAD
+          if test -f ps5-react/dist/PPSA99777.receipt.json; then
+            cp ps5-react/dist/PPSA99777.receipt.json release/
+          fi
+          cd release
+          shasum -a 256 * > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DriveHop-PPSA99777-v0.2.0
+          path: release/
+          if-no-files-found: error
+          retention-days: 14

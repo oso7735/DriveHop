@@ -1,0 +1,12 @@
+{
+  "$schema": "https://raw.githubusercontent.com/JVK3R/ps5-react/main/app.schema.json",
+  "titleId": "PPSA99777",
+  "contentId": "UP9000-PPSA99777_00-DRIVEHOP00000001",
+  "name": "DriveHop",
+  "version": "01.002.000",
+  "resolution": "auto",
+  "refreshRate": 60,
+  "timeoutSeconds": 0,
+  "filesystemAccess": "console",
+  "networking": true
+}

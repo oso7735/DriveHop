@@ -1,0 +1,52 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  basename, destinationPath, displayNameFromFile, extension, formatBytes, formatForName,
+  duplicateTitleIds, isAllowedImage, isPartial, joinPath, libraryPaths, percentOf,
+  queueSpaceNeeds, sameIdentity, titleIdFrom, transferKey, updateManualListText,
+} from '../app/drivehop/library.js';
+
+test('recognizes every ShadowMountPlus image format and rejects installers/archives', () => {
+  const allowed = ['A.ffpkg', 'B.EXFAT', 'C.ffpfs', 'D.ffpfsc'];
+  for (const name of allowed) assert.equal(isAllowedImage(name), true, name);
+  for (const name of ['game.pkg', 'game.7z', 'game.rar', 'game.zip', 'readme.txt']) {
+    assert.equal(isAllowedImage(name), false, name);
+  }
+  assert.equal(formatForName('PPSA00001.ffpkg'), 'FFPKG');
+  assert.equal(extension('x.FFPFSC'), '.ffpfsc');
+});
+
+test('normalizes paths, title ids and display names', () => {
+  assert.equal(joinPath('/mnt/usb0/', '/homebrew/', 'PPSA00001.exfat'), '/mnt/usb0/homebrew/PPSA00001.exfat');
+  assert.equal(basename('/data/homebrew/PPSA00001.exfat'), 'PPSA00001.exfat');
+  assert.equal(titleIdFrom('Name PPSA20154 v1'), 'PPSA20154');
+  assert.equal(displayNameFromFile('PPSA05144_Little.Nightmares3.ffpfsc'), 'PPSA05144 Little Nightmares3');
+});
+
+test('uses a safe conventional homebrew destination', () => {
+  const usb = {root: '/mnt/usb1', kind: 'usb'};
+  assert.equal(destinationPath(usb, 'PPSA00001.exfat'), '/mnt/usb1/homebrew/PPSA00001.exfat');
+  assert.deepEqual(libraryPaths(usb), ['/mnt/usb1/homebrew', '/mnt/usb1/etaHEN/games', '/mnt/usb1']);
+  assert.deepEqual(libraryPaths({root: '/data', kind: 'internal'}), ['/data/homebrew', '/data/etaHEN/games']);
+});
+
+test('manual list move replaces old and same-title paths while preserving comments', () => {
+  const before = '# sources\n/mnt/usb0/homebrew/PPSA00001.exfat\n/data/homebrew/PPSA99999.ffpkg\n';
+  const after = updateManualListText(before, '/mnt/usb0/homebrew/PPSA00001.exfat', '/data/homebrew/PPSA00001.exfat', 'PPSA00001');
+  assert.equal(after, '# sources\n/data/homebrew/PPSA99999.ffpkg\n/data/homebrew/PPSA00001.exfat\n');
+});
+
+test('identity, progress and byte formatting are stable', () => {
+  assert.equal(sameIdentity({device: '1', inode: '2'}, {device: '1', inode: '2'}), true);
+  assert.equal(sameIdentity({device: '1', inode: '2'}, {device: '1', inode: '3'}), false);
+  assert.equal(percentOf(50, 200), 25);
+  assert.equal(formatBytes(1024 ** 3), '1.0 GB');
+  assert.equal(isPartial('PPSA00001.exfat.partial'), true);
+});
+
+test('duplicate detection and queue preflight use title and destination roots', () => {
+  assert.deepEqual([...duplicateTitleIds([{titleId: 'PPSA00001'}, {titleId: ''}], [{titleId: 'PPSA00001'}, {titleId: 'PPSA00002'}])], ['PPSA00001']);
+  const item = {mode: 'copy', game: {path: '/a/game.exfat', sourceName: 'game.exfat', size: 100}, target: {root: '/data'}};
+  assert.deepEqual(queueSpaceNeeds([item], 20), {'/data': 120});
+  assert.equal(transferKey(item), 'copy:/a/game.exfat:/data:game.exfat');
+});
