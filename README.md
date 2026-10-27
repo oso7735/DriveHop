@@ -66,7 +66,7 @@ PATH="$PWD/.venv/bin:$PATH" npm run build -- --app-dir ../DriveHop/app/drivehop
 
 The result is written under PS5 React's `dist/PPSA99777` directory. From Windows,
 use the included GitHub Actions workflow: GitHub's `macos-15` runner is an M1
-Mac and produces a checksummed `DriveHop-PPSA99777-v0.3.0` artifact. See
+Mac and produces a checksummed `DriveHop-PPSA99777-v0.3.1` artifact. See
 [`docs/BUILD-ON-GITHUB.md`](docs/BUILD-ON-GITHUB.md).
 
 Run the platform-neutral model tests anywhere Node.js is available:
@@ -83,6 +83,11 @@ npm test
    compatible ELF loader on port `9021`).
 4. Run ShadowMountPlus and let it register the folder.
 5. Close any running game, then open **DriveHop** from the Games row.
+
+Release archives explicitly store mode `0777` on every directory and file. The
+workflow rejects an archive containing any other mode. The artifact also includes
+a `.tar.gz` variant for extractors that preserve POSIX modes more reliably than
+Windows ZIP tools.
 
 DriveHop requires broad filesystem access because its purpose is moving data
 between console-wide storage roots. Install only a build whose source and hash
