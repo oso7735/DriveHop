@@ -7,7 +7,7 @@
 #include "../installer/installer.c"
 #undef main
 
-const unsigned char drivehop_payload[] = {0};
+const unsigned char drivehop_payload[32] = {0};
 const unsigned char drivehop_payload_end[] = {0};
 
 int sceKernelSendNotificationRequest(int device, void *request, size_t size, int blocking)
