@@ -10,6 +10,7 @@ This project is independent homebrew and is not affiliated with Sony.
 ## What is implemented
 
 - Polished native 1080p/4K PS5 interface built with PS5 React.
+- Custom 4K BC7 home-screen artwork shown while DriveHop is highlighted.
 - Internal SSD, M.2 (`/mnt/ext0`, `/mnt/ext1`) and USB (`/mnt/usb0` through
   `/mnt/usb7`) discovery, selection and capacity reporting.
 - Dual-pane libraries that scan each drive's `homebrew`, `etaHEN/games`, and
@@ -66,7 +67,7 @@ PATH="$PWD/.venv/bin:$PATH" npm run build -- --app-dir ../DriveHop/app/drivehop
 
 The result is written under PS5 React's `dist/PPSA99777` directory. From Windows,
 use the included GitHub Actions workflow: GitHub's `macos-15` runner is an M1
-Mac and produces a checksummed `DriveHop-PPSA99777-v0.3.2` artifact. See
+Mac and produces a checksummed `DriveHop-PPSA99777-v0.3.3` artifact. See
 [`docs/BUILD-ON-GITHUB.md`](docs/BUILD-ON-GITHUB.md).
 
 Run the platform-neutral model tests anywhere Node.js is available:
