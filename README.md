@@ -15,6 +15,8 @@ This project is independent homebrew and is not affiliated with Sony.
 - Dual-pane libraries that scan each drive's `homebrew`, `etaHEN/games`, and
   (for removable drives) top-level directory.
 - Extracted game folders plus `.ffpkg`, `.exfat`, `.ffpfs` and `.ffpfsc` images.
+- Real game names and tile artwork from ShadowMountPlus's local game catalog;
+  installed app metadata and filename-based labels remain as offline fallbacks.
 - Copy or move in either direction.
 - Resumable background transfers. Data is written under `<destination>.partial`,
   verified byte-for-byte, and atomically renamed into place.
@@ -64,7 +66,7 @@ PATH="$PWD/.venv/bin:$PATH" npm run build -- --app-dir ../DriveHop/app/drivehop
 
 The result is written under PS5 React's `dist/PPSA99777` directory. From Windows,
 use the included GitHub Actions workflow: GitHub's `macos-15` runner is an M1
-Mac and produces a checksummed `DriveHop-PPSA99777-v0.2.0` artifact. See
+Mac and produces a checksummed `DriveHop-PPSA99777-v0.3.0` artifact. See
 [`docs/BUILD-ON-GITHUB.md`](docs/BUILD-ON-GITHUB.md).
 
 Run the platform-neutral model tests anywhere Node.js is available:
@@ -88,9 +90,12 @@ you trust.
 
 ## Compatibility and limitations
 
-- Hardware validation is still required. The source and host-side tests are
-  complete, but this Windows development machine cannot produce or run the PS5
-  binary because the current PS5 React build host is macOS/Apple silicon.
+- DriveHop v0.2.0 was hardware-tested successfully on a PS5. New releases retain
+  host-side coverage, but storage operations should still be tested with Copy
+  before Move after an update.
+- Artwork and container metadata require ShadowMountPlus's local API on
+  `127.0.0.1:10101`. When it is unavailable, DriveHop remains usable and falls
+  back to `/user/appmeta` metadata and cleaned filenames.
 - Folder sizes are intentionally not calculated during library browsing because
   recursively walking tens of thousands of files would stall the UI. The native
   copy worker reports the full size after a transfer starts.
@@ -109,10 +114,8 @@ pane and mounts normally before testing Move. Run the speed test on each drive,
 then use the faster writable destination. If power is interrupted, open Recovery
 and resume the matching `.partial` transfer; do not rename partial files by hand.
 
-The next useful additions after hardware validation are dynamic local cover art
-(the current framework image API accepts bundled or HTTP(S) images only), optional
-recursive folder-size calculation, and a diagnostic log export that can be
-attached to bug reports.
+The next useful additions are optional recursive folder-size calculation and a
+diagnostic log export that can be attached to bug reports.
 
 ## Project layout
 

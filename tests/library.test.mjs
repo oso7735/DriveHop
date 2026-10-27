@@ -1,10 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  basename, destinationPath, displayNameFromFile, extension, formatBytes, formatForName,
-  duplicateTitleIds, isAllowedImage, isPartial, joinPath, libraryPaths, percentOf,
+  absoluteHttpUrl, basename, destinationPath, displayNameFromFile, extension, formatBytes, formatForName,
+  duplicateTitleIds, enrichGames, isAllowedImage, isPartial, joinPath, libraryPaths, percentOf,
   queueSpaceNeeds, sameIdentity, titleIdFrom, transferKey, updateManualListText,
 } from '../app/drivehop/library.js';
+
+test('enriches filename-only games with ShadowMount names and artwork', () => {
+  const games = [{key: '/mnt/usb1/homebrew/PPSA01474.exfat', path: '/mnt/usb1/homebrew/PPSA01474.exfat', name: 'PPSA01474', titleId: 'PPSA01474'}];
+  const catalog = [{path: '/mnt/usb1/homebrew/PPSA01474.exfat', title_id: 'PPSA01474', name: 'Ratchet & Clank: Rift Apart', icon_url: '/api/v1/games/icon?title_id=PPSA01474&size=thumb'}];
+  assert.deepEqual(enrichGames(games, catalog)[0], {
+    ...games[0], name: 'Ratchet & Clank: Rift Apart', titleId: 'PPSA01474',
+    iconUrl: 'http://127.0.0.1:10101/api/v1/games/icon?title_id=PPSA01474&size=thumb',
+  });
+  assert.equal(absoluteHttpUrl('https://covers.example/game.png', 'http://127.0.0.1:10101'), 'https://covers.example/game.png');
+});
+
+test('metadata can identify an image whose filename has no title id', () => {
+  const game = {key: '/mnt/usb0/homebrew/game.exfat', path: '/mnt/usb0/homebrew/game.exfat', name: 'game', titleId: ''};
+  const result = enrichGames([game], [{path: game.path, title_id: 'PPSA12345', name: 'Actual Game', icon_url: ''}]);
+  assert.equal(result[0].name, 'Actual Game');
+  assert.equal(result[0].titleId, 'PPSA12345');
+});
 
 test('recognizes every ShadowMountPlus image format and rejects installers/archives', () => {
   const allowed = ['A.ffpkg', 'B.EXFAT', 'C.ffpfs', 'D.ffpfsc'];

@@ -45,6 +45,40 @@ export function displayNameFromFile(name) {
     .trim();
 }
 
+export function absoluteHttpUrl(value, baseUrl) {
+  const url = String(value || '').trim();
+  if (!url) return '';
+  if (/^https?:\/\//i.test(url)) return url;
+  const base = String(baseUrl || '').replace(/\/+$/, '');
+  if (!base) return '';
+  return `${base}/${url.replace(/^\/+/, '')}`;
+}
+
+export function enrichGames(games, catalog, baseUrl = 'http://127.0.0.1:10101') {
+  const byTitleId = new Map();
+  const byPath = new Map();
+  for (const item of catalog || []) {
+    if (!item || typeof item !== 'object') continue;
+    const titleId = String(item.title_id || item.titleId || '').toUpperCase();
+    const path = joinPath(item.path || '');
+    if (titleId && !byTitleId.has(titleId)) byTitleId.set(titleId, item);
+    if (path && path !== '/' && !byPath.has(path)) byPath.set(path, item);
+  }
+  return (games || []).map(game => {
+    const titleId = String(game.titleId || '').toUpperCase();
+    const metadata = (titleId && byTitleId.get(titleId)) || byPath.get(joinPath(game.path || ''));
+    if (!metadata) return game;
+    const resolvedId = String(metadata.title_id || metadata.titleId || titleId).toUpperCase();
+    const resolvedName = String(metadata.name || metadata.title_name || '').trim();
+    return {
+      ...game,
+      titleId: resolvedId || titleId,
+      name: resolvedName && resolvedName.toUpperCase() !== resolvedId ? resolvedName : game.name,
+      iconUrl: absoluteHttpUrl(metadata.icon_url || metadata.iconUrl, baseUrl),
+    };
+  }).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export function libraryPaths(drive) {
   if (!drive) return [];
   const paths = [joinPath(drive.root, 'homebrew'), joinPath(drive.root, 'etaHEN/games')];

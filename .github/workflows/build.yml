@@ -59,8 +59,8 @@ jobs:
         run: |
           test -d ps5-react/dist/PPSA99777
           mkdir release
-          ditto -c -k --sequesterRsrc --keepParent ps5-react/dist/PPSA99777 release/DriveHop-PPSA99777-v0.2.0.zip
-          git -C DriveHop archive --format=zip --output=../release/DriveHop-source-v0.2.0.zip HEAD
+          ditto -c -k --sequesterRsrc --keepParent ps5-react/dist/PPSA99777 release/DriveHop-PPSA99777-v0.3.0.zip
+          git -C DriveHop archive --format=zip --output=../release/DriveHop-source-v0.3.0.zip HEAD
           if test -f ps5-react/dist/PPSA99777.receipt.json; then
             cp ps5-react/dist/PPSA99777.receipt.json release/
           fi
@@ -68,7 +68,7 @@ jobs:
           shasum -a 256 * > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: DriveHop-PPSA99777-v0.2.0
+          name: DriveHop-PPSA99777-v0.3.0
           path: release/
           if-no-files-found: error
           retention-days: 14

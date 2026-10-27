@@ -3,11 +3,11 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   AppRegistry, BackHandler, Controller, FileSystem, FocusScope, Http,
-  Notifications, Power, ScrollView, Text, View, useNavigationEvents,
+  Image, Notifications, Power, ScrollView, Text, View, useNavigationEvents,
 } from '@ps5-react/core';
 import {
   DRIVE_SPECS, basename, destinationPath, displayNameFromFile, etaText,
-  formatBytes, formatForName, isAllowedImage, isPartial, joinPath, libraryPaths,
+  enrichGames, formatBytes, formatForName, isAllowedImage, isPartial, joinPath, libraryPaths,
   duplicateTitleIds, percentOf, queueSpaceNeeds, sameIdentity, speedText,
   titleIdFrom, transferKey, updateManualListText,
 } from './library.js';
@@ -21,6 +21,7 @@ const STATE_DIR = `${FileSystem.dataDir}/drivehop`;
 const STATE_FILE = `${STATE_DIR}/state.json`;
 const SPEED_SOURCE = `${STATE_DIR}/speed-test.bin`;
 const SPEED_BYTES = 4 * 1024 * 1024;
+const SHADOWMOUNT_API = 'http://127.0.0.1:10101';
 
 function loadPersistentState() {
   try {
@@ -45,12 +46,16 @@ function safeReadParam(folder) {
   try {
     const data = JSON.parse(FileSystem.readFile(joinPath(folder, 'sce_sys/param.json')));
     const localized = data.localizedParameters || {};
-    const language = localized.defaultLanguage || 'en-US';
-    const title = (localized[language] || localized['en-US'] || {}).titleName;
-    return {title: title || '', titleId: String(data.titleId || '').toUpperCase()};
+    const language = data.defaultLanguage || 'en-US';
+    const title = (localized[language] || localized['en-US'] || {}).titleName || data.titleName;
+    return {title: title || '', titleId: String(data.titleId || data.title_id || '').toUpperCase()};
   } catch (err) {
     return {title: '', titleId: ''};
   }
+}
+
+function appMetadataForTitle(titleId) {
+  return titleId ? safeReadParam(`/user/appmeta/${titleId}`) : {title: '', titleId: ''};
 }
 
 function isGameFolder(path) {
@@ -77,9 +82,12 @@ function scanDrive(drive) {
       if (!entry || !entry.name || entry.name.startsWith('.') || isPartial(entry.name)) continue;
       const path = joinPath(directory, entry.name);
       if (entry.isFile && isAllowedImage(entry.name)) {
+        const filenameTitleId = titleIdFrom(entry.name);
+        const appMetadata = appMetadataForTitle(filenameTitleId);
         found.set(path, {
-          key: path, path, sourceName: entry.name, name: displayNameFromFile(entry.name),
-          titleId: titleIdFrom(entry.name), format: formatForName(entry.name),
+          key: path, path, sourceName: entry.name,
+          name: appMetadata.title || displayNameFromFile(entry.name),
+          titleId: appMetadata.titleId || filenameTitleId, format: formatForName(entry.name),
           size: Number(entry.size || 0), kind: 'image', modified: entry.modified || 0,
           identity: {device: entry.device, inode: entry.inode},
         });
@@ -95,6 +103,21 @@ function scanDrive(drive) {
     }
   }
   return [...found.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+async function loadShadowMountCatalog() {
+  try {
+    const response = await Http.request(`${SHADOWMOUNT_API}/api/v1/games`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({include_size: false}), maxBytes: 2 * 1024 * 1024,
+    });
+    if (!response.ok) return [];
+    const data = await response.json();
+    return Array.isArray(data.games) ? data.games : [];
+  } catch (err) {
+    console.log(`DriveHop: ShadowMount metadata unavailable: ${err.message}`);
+    return [];
+  }
 }
 
 function scanPartials(drives) {
@@ -120,7 +143,7 @@ function scanPartials(drives) {
 async function refreshShadowMount(titleId) {
   if (!titleId) return false;
   try {
-    const response = await Http.request('http://127.0.0.1:10101/api/v1/games/mount', {
+    const response = await Http.request(`${SHADOWMOUNT_API}/api/v1/games/mount`, {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({title_id: titleId}), maxBytes: 128 * 1024,
     });
@@ -181,12 +204,16 @@ function Capacity({drive}) {
 }
 
 function GameRow({game, selected, duplicate, side, index, onSelect}) {
+  const [iconFailed, setIconFailed] = useState(false);
+  useEffect(() => setIconFailed(false), [game.iconUrl]);
   const initial = (game.name || game.titleId || '?').replace(/^PPSA\d{5}\s*/i, '').trim().slice(0, 1).toUpperCase() || '?';
   return (
     <View focusable autoFocus={index === 0} onFocus={() => onSelect(game, side)} onPress={() => onSelect(game, side)}
       className={`h-[76px] px-3 flex-row items-center gap-3 rounded-xl border-[2px] ${selected ? 'border-violet bg-[#242039]' : 'border-transparent bg-transparent'} focused:border-mint focused:bg-raised`}>
-      <View className={`w-[48px] h-[48px] rounded-xl items-center justify-center ${game.kind === 'folder' ? 'bg-[#2b4160]' : 'bg-[#253c39]'}`}>
+      <View className={`w-[48px] h-[48px] rounded-xl overflow-hidden items-center justify-center ${game.kind === 'folder' ? 'bg-[#2b4160]' : 'bg-[#253c39]'}`}>
         <Text className="font-inter text-[21px] text-white">{initial}</Text>
+        {!!game.iconUrl && !iconFailed && <Image source={{uri: game.iconUrl}} resizeMode="cover"
+          onError={() => setIconFailed(true)} style={{position: 'absolute', left: 0, top: 0, width: 48, height: 48, borderRadius: 12}} />}
       </View>
       <View className="flex-1 gap-1 overflow-hidden">
         <Text className={`${TEXT} text-[18px]`} numberOfLines={1}>{game.name}</Text>
@@ -490,27 +517,44 @@ function App() {
   const [partials, setPartials] = useState([]);
   const [speedTest, setSpeedTest] = useState(null);
   const taskRef = useRef(null);
+  const catalogRef = useRef([]);
   useHaptics();
 
   useEffect(() => { savePersistentState(queue, interrupted); }, [queue, interrupted]);
 
-  const refresh = useCallback((side, drive) => {
+  const refresh = useCallback(async (side, drive) => {
     const current = drive || (side === 'left' ? leftDrive : rightDrive);
-    const games = scanDrive(current);
-    setLibraries(previous => ({...previous, [side]: games}));
-    setSelected(previous => ({...previous, [side]: games[0] || null}));
+    const publish = games => {
+      setLibraries(previous => ({...previous, [side]: games}));
+      setSelected(previous => {
+        const currentSelection = previous[side];
+        const next = games.find(game => game.key === currentSelection?.key) || games[0] || null;
+        return {...previous, [side]: next};
+      });
+    };
+    const scanned = scanDrive(current);
+    publish(enrichGames(scanned, catalogRef.current, SHADOWMOUNT_API));
+    const catalog = await loadShadowMountCatalog();
+    if (catalog.length) {
+      catalogRef.current = catalog;
+      publish(enrichGames(scanned, catalog, SHADOWMOUNT_API));
+    }
   }, [leftDrive, rightDrive]);
 
   useEffect(() => {
     let alive = true;
-    detectDrives().then(found => {
+    Promise.all([detectDrives(), loadShadowMountCatalog()]).then(([found, catalog]) => {
       if (!alive) return;
       const internal = found.find(item => item.kind === 'internal') || found[0] || null;
       const external = found.find(item => item.kind !== 'internal') || null;
       setDrives(found);
       setLeftDrive(internal);
       setRightDrive(external);
-      setLibraries({left: scanDrive(internal), right: scanDrive(external)});
+      catalogRef.current = catalog;
+      setLibraries({
+        left: enrichGames(scanDrive(internal), catalog, SHADOWMOUNT_API),
+        right: enrichGames(scanDrive(external), catalog, SHADOWMOUNT_API),
+      });
       setPartials(scanPartials(found));
       setPhase('ready');
     }).catch(err => {
@@ -522,7 +566,7 @@ function App() {
 
   const chooseDrive = (side, drive) => {
     if (side === 'left') setLeftDrive(drive); else setRightDrive(drive);
-    const games = scanDrive(drive);
+    const games = enrichGames(scanDrive(drive), catalogRef.current, SHADOWMOUNT_API);
     setLibraries(previous => ({...previous, [side]: games}));
     setSelected(previous => ({...previous, [side]: games[0] || null}));
     setActiveSide(side);
