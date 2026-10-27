@@ -1,0 +1,56 @@
+diff --git a/payload/include/smbd_proto.h b/payload/include/smbd_proto.h
+index b380686..7440c8a 100644
+--- a/payload/include/smbd_proto.h
++++ b/payload/include/smbd_proto.h
+@@ -15,14 +15,14 @@
+ #define PS5UPLOAD_SMBD_PROTO_H
+ 
+-#define SMBD_PORT 9183
++#define SMBD_PORT 9184
+ #ifndef SMBD_DIR /* a host build of the daemon (tests) points it elsewhere */
+-#define SMBD_DIR "/data/ps5upload/smb"
++#define SMBD_DIR "/data/drivehop/smb"
+ #endif
+ #define SMBD_KEY_PATH SMBD_DIR "/daemon.key"
+ /* The game library cache (#498, smb/smbd_library.h): the daemon writes <source>.json and icons/ here,
+  * the console page reads them through /api/fs/read. */
+ #ifndef SMBD_LIB_DIR
+-#define SMBD_LIB_DIR "/data/ps5upload/library"
++#define SMBD_LIB_DIR "/data/drivehop/library"
+ #endif
+ /* What a scan of the console's own drives walks, and the folder it never walks into. */
+ #define SMBD_LIB_CONSOLE_ROOTS "/data\n/mnt/usb0\n/mnt/usb1\n/mnt/usb2\n/mnt/usb3\n/mnt/ext0\n/mnt/ext1"
+diff --git a/payload/smb/smbd_main.c b/payload/smb/smbd_main.c
+index 1927d6b..a24df4d 100644
+--- a/payload/smb/smbd_main.c
++++ b/payload/smb/smbd_main.c
+@@ -538,14 +538,16 @@ static void handle(const char *r, size_t n, sj_buf_t *b) {
+         op_shares(r, n, b);
+     } else if (strcmp(op, "list") == 0) {
+         op_list(r, n, b);
+-    } else if (strcmp(op, "probe") == 0 || strcmp(op, "stat") == 0 || strcmp(op, "mkdir") == 0) {
++    } else if (strcmp(op, "probe") == 0 || strcmp(op, "stat") == 0) {
+         op_simple(op, r, n, b);
+     } else if (strcmp(op, "copy") == 0) {
+-        op_copy(r, n, b, 0);
+-    } else if (strcmp(op, "remove") == 0) {
+-        op_copy(r, n, b, 1);
++        char dir[8] = {0};
++        if (sj_str(r, n, "dir", dir, sizeof dir) == 1 && strcmp(dir, "down") == 0) op_copy(r, n, b, 0);
++        else reply_err(b, XE_ACCESS, "DriveHop keeps NAS shares read-only.");
+     } else if (strcmp(op, "scan") == 0) {
+         op_scan(r, n, b);
++    } else if (strcmp(op, "mkdir") == 0 || strcmp(op, "remove") == 0) {
++        reply_err(b, XE_ACCESS, "DriveHop keeps NAS shares read-only.");
+     } else if (strcmp(op, "job") == 0 || strcmp(op, "cancel") == 0) {
+         int rc;
+         if (sj_str(r, n, "job", job, sizeof job) != 1) {
+@@ -655,7 +657,7 @@ int main(void) {
+     signal(SIGPIPE, SIG_IGN);
+     umask(0);
+     detach_stdio();
+-    mkdir("/data/ps5upload", 0777);
++    mkdir("/data/drivehop", 0777);
+     mkdir(SMBD_DIR, 0700);
+     if (read_key(g_key, g_elf_id, sizeof g_elf_id) != 0) {
+         smbd_log("no key at %s: not starting", SMBD_KEY_PATH);

@@ -13,6 +13,10 @@ This project is independent homebrew and is not affiliated with Sony.
 - Custom 4K BC7 home-screen artwork shown while DriveHop is highlighted.
 - Internal SSD, M.2 (`/mnt/ext0`, `/mnt/ext1`) and USB (`/mnt/usb0` through
   `/mnt/usb7`) discovery, selection and capacity reporting.
+- Read-only SMB2/SMB3 NAS support through a bundled, pinned `libsmb2` helper.
+  A PIN-protected phone/computer page collects the server, share and credentials;
+  the NAS then appears as a selectable drive in either pane. Multi-select,
+  destination-space checks, progress and cancellation work for NAS downloads.
 - Dual-pane libraries that scan each drive's `homebrew`, `etaHEN/games`, and
   (for removable drives) top-level directory.
 - Vertical navigation stays inside its current pane; Left/Right explicitly
@@ -59,6 +63,12 @@ For a move, DriveHop performs deletion as a separate final step. A cancelled or
 failed job may leave a resumable `.partial` item, but never a partially published
 game at the final destination.
 
+NAS shares have a stricter policy: DriveHop never uploads, renames or deletes
+anything on SMB. The helper negotiates SMB2/SMB3 with signing enabled, stages
+downloads before publishing them, and validates the resulting file size. Local
+drive-to-drive transfers retain the stronger byte-for-byte verification described
+above.
+
 ## Build
 
 PS5 React currently supports building on Apple-silicon macOS. Install its
@@ -76,7 +86,7 @@ PATH="$PWD/.venv/bin:$PATH" npm run build -- --app-dir ../DriveHop/app/drivehop
 
 The result is written under PS5 React's `dist/PPSA99777` directory. From Windows,
 use the included GitHub Actions workflow: GitHub's `macos-15` runner is an M1
-Mac and produces a checksummed `DriveHop-PPSA99777-v0.5.0` artifact. See
+Mac and produces a checksummed `DriveHop-PPSA99777-v0.6.0` artifact. See
 [`docs/BUILD-ON-GITHUB.md`](docs/BUILD-ON-GITHUB.md).
 
 Run the platform-neutral model tests anywhere Node.js is available:
@@ -87,7 +97,7 @@ npm test
 
 ## Install on the PS5
 
-1. Download `DriveHop-Installer-v0.5.0.elf` from the build artifact.
+1. Download `DriveHop-Installer-v0.6.0.elf` from the build artifact.
 2. Close DriveHop if it is already running, then send the installer to the PS5's
    ELF loader on port `9021` using Payload Manager or another payload sender.
 3. Wait for the installation notification. The installer stages and verifies
@@ -100,7 +110,7 @@ The installer is offline: it does not download code or require GitHub access
 from the console. Failed updates retain the previous installation. Its log is
 written to `/data/drivehop/installer.log`.
 
-For recovery or manual installation, extract `DriveHop-PPSA99777-v0.5.0.zip`
+For recovery or manual installation, extract `DriveHop-PPSA99777-v0.6.0.zip`
 and copy its complete `PPSA99777` folder to `/data/homebrew/PPSA99777`.
 
 Release archives explicitly store mode `0777` on every directory and file. The
@@ -130,6 +140,10 @@ undocumented system files.
   copy worker reports the full size after a transfer starts.
 - `.ffpfs` and `.ffpfsc` support follows ShadowMountPlus, where PFS remains
   experimental. DriveHop transfers these files without converting them.
+- SMB requires an IPv4-reachable NAS with SMB2 or SMB3 enabled. SMB1 is not
+  supported. Use a dedicated read-only NAS account when possible. A password is
+  session-only unless Remember password is selected; remembered settings are
+  stored mode `0600` under `/data/drivehop/smb`.
 - A copied duplicate is not forced into ShadowMountPlus's manual list. A move
   replaces the old source hint with the new path; normal scan paths still apply.
 - The app uses homebrew title ID `PPSA99777`. It was not found in the public
@@ -150,6 +164,8 @@ diagnostic log export that can be attached to bug reports.
 
 - `app/drivehop/index.jsx` — native dual-pane UI and transfer workflow.
 - `app/drivehop/library.js` — drive, path, format and safety helpers.
+- `app/drivehop/smb.js` and `smb_bridge.c` — SMB validation, catalogue model and
+  loopback bridge to the bundled helper.
 - `tests/` — host-side behavior tests.
 - `docs/FORMAT-RESEARCH.md` — supported-format decision record.
 

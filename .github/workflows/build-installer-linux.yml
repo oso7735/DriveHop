@@ -18,19 +18,19 @@ jobs:
       - name: Recover the last verified native app
         run: |
           artifact_id=$(gh api --paginate "/repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" \
-            --jq '.artifacts[] | select(.name == "DriveHop-PPSA99777-v0.4.0" and .expired == false) | .id' | head -n 1)
+            --jq '.artifacts[] | select(.name == "DriveHop-PPSA99777-v0.6.0" and .expired == false) | .id' | head -n 1)
           test -n "$artifact_id"
           mkdir -p recovered app
           gh api "/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > recovered/artifact.zip
           unzip -q recovered/artifact.zip -d recovered
-          unzip -q recovered/DriveHop-PPSA99777-v0.4.0.zip -d app
+          unzip -q recovered/DriveHop-PPSA99777-v0.6.0.zip -d app
           test -f app/PPSA99777/eboot.bin
           python3 - <<'PY'
           import json
           from pathlib import Path
           path = Path('app/PPSA99777/sce_sys/param.json')
           value = json.loads(path.read_text(encoding='utf-8'))
-          value['contentVersion'] = '01.005.000'
+          value['contentVersion'] = '01.006.000'
           path.write_text(json.dumps(value, indent=2) + '\n', encoding='utf-8')
           PY
           chmod -R 0777 app/PPSA99777
@@ -50,23 +50,23 @@ jobs:
         run: |
           python3 -m pip install 'lz4==4.4.4'
           mkdir -p build release
-          python3 installer/pack_payload.py app/PPSA99777 build/drivehop-v0.5.0.payload
+          python3 installer/pack_payload.py app/PPSA99777 build/drivehop-v0.6.0.payload
           compiler=$(find sdk -type f -name prospero-clang -print -quit)
           payload_sdk=$(cd "$(dirname "$compiler")/.." && pwd)
-          payload="$GITHUB_WORKSPACE/build/drivehop-v0.5.0.payload"
+          payload="$GITHUB_WORKSPACE/build/drivehop-v0.6.0.payload"
           "$payload_sdk/bin/prospero-clang" -c \
             -DDRIVEHOP_PAYLOAD_PATH=\"$payload\" \
             -o build/embed.o installer/embed.S
           "$payload_sdk/bin/prospero-clang" -std=gnu11 -O2 -Wall -Wextra -Werror \
-            -DDRIVEHOP_VERSION=\"0.5.0\" \
-            -o release/DriveHop-Installer-v0.5.0.elf \
+            -DDRIVEHOP_VERSION=\"0.6.0\" \
+            -o release/DriveHop-Installer-v0.6.0.elf \
             installer/installer.c build/embed.o -lSceNet -lSceNotification
-          "$payload_sdk/bin/prospero-strip" release/DriveHop-Installer-v0.5.0.elf
-          test -s release/DriveHop-Installer-v0.5.0.elf
-          (cd release && sha256sum DriveHop-Installer-v0.5.0.elf > SHA256SUMS.txt)
+          "$payload_sdk/bin/prospero-strip" release/DriveHop-Installer-v0.6.0.elf
+          test -s release/DriveHop-Installer-v0.6.0.elf
+          (cd release && sha256sum DriveHop-Installer-v0.6.0.elf > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
-          name: DriveHop-Installer-v0.5.0-linux-build
+          name: DriveHop-Installer-v0.6.0-linux-build
           path: release/
           if-no-files-found: error
           retention-days: 14

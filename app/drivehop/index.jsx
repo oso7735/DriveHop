@@ -3,7 +3,7 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   AppRegistry, BackHandler, Controller, FileSystem, FocusScope, Http,
-  Image, Notifications, Power, ScrollView, Text, View, useNavigationEvents,
+  Image, LocalServer, Notifications, Payloads, Power, ScrollView, Text, View, useNavigationEvents,
 } from '@ps5-react/core';
 import {
   DRIVE_SPECS, activeSelection, basename, destinationPath, displayNameFromFile, etaText,
@@ -11,6 +11,11 @@ import {
   duplicateTitleIds, percentOf, queueSpaceNeeds, sameIdentity, speedText,
   titleIdFrom, transferKey, updateManualListText,
 } from './library.js';
+import {
+  gamesFromSmbCatalogue, publicSmbConfig, SMB_KEY_FILE, SMB_LIBRARY_DIR, SMB_REPLY_FILE,
+  SMB_STATE_DIR, smbConnectionFields, smbDrive, smbErrorMessage, validateSmbConfig,
+} from './smb.js';
+import {SMB_COMPANION_PAGE} from './smb_page.js';
 
 const TEXT = 'font-inter text-white';
 const MUTED = 'font-inter text-muted';
@@ -22,6 +27,67 @@ const STATE_FILE = `${STATE_DIR}/state.json`;
 const SPEED_SOURCE = `${STATE_DIR}/speed-test.bin`;
 const SPEED_BYTES = 4 * 1024 * 1024;
 const SHADOWMOUNT_API = 'http://127.0.0.1:10101';
+const SMB_CONFIG_FILE = `${SMB_STATE_DIR}/config.json`;
+const SMB_CATALOG_FILE = `${SMB_LIBRARY_DIR}/drivehop.json`;
+
+function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+function randomSmbKey() {
+  let key = '';
+  for (let index = 0; index < 64; index++) key += Math.floor(Math.random() * 16).toString(16);
+  return key;
+}
+
+function loadSmbConfig() {
+  try {
+    if (!FileSystem.exists(SMB_CONFIG_FILE)) return null;
+    return validateSmbConfig(JSON.parse(FileSystem.readFile(SMB_CONFIG_FILE)));
+  } catch (err) { return null; }
+}
+
+function saveSmbConfig(config) {
+  FileSystem.mkdir(SMB_STATE_DIR, {recursive: true});
+  FileSystem.writeFile(SMB_CONFIG_FILE, JSON.stringify(publicSmbConfig(config), null, 2), {sync: true});
+  FileSystem.chmod(SMB_CONFIG_FILE, 0o600);
+}
+
+function writeSmbKey(key) {
+  FileSystem.mkdir(SMB_STATE_DIR, {recursive: true});
+  FileSystem.writeFile(SMB_KEY_FILE, `${key}\ndrivehop-0.6.0\n`, {sync: true});
+  FileSystem.chmod(SMB_KEY_FILE, 0o600);
+}
+
+function smbRpc(key, request) {
+  const wire = JSON.stringify({key, ...request});
+  const sent = Payloads.send('/app0/smb-bridge.elf', {request: `${wire}\n`, answer: true});
+  if (!sent.ok || sent.answer !== 'ok') throw new Error(sent.error || 'The DriveHop SMB bridge did not answer.');
+  if (!FileSystem.exists(SMB_REPLY_FILE)) throw new Error('The SMB helper did not leave a response.');
+  const response = JSON.parse(FileSystem.readFile(SMB_REPLY_FILE));
+  if (response.error) throw new Error(smbErrorMessage(response));
+  return response;
+}
+
+async function startSmbDaemon(key) {
+  writeSmbKey(key);
+  let lastError = '';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try { return smbRpc(key, {op: 'ping'}); } catch (err) { lastError = err.message || String(err); }
+    const launched = Payloads.send('/app0/drivehop-smb.elf');
+    if (!launched.ok) throw new Error(launched.error || 'Could not start the bundled SMB helper.');
+    await delay(500 + attempt * 350);
+  }
+  throw new Error(lastError || 'The SMB helper did not start.');
+}
+
+async function waitSmbJob(key, id, onProgress) {
+  for (;;) {
+    const status = smbRpc(key, {op: 'job', job: id});
+    onProgress?.(status);
+    if (status.state === 'done') return status;
+    if (status.state !== 'running') throw new Error(status.detail || status.error || 'The SMB job failed.');
+    await delay(750);
+  }
+}
 
 function loadPersistentState() {
   try {
@@ -36,7 +102,9 @@ function loadPersistentState() {
 function savePersistentState(queue, interrupted) {
   try {
     FileSystem.mkdir(STATE_DIR, {recursive: true});
-    FileSystem.writeFile(STATE_FILE, JSON.stringify({queue, interrupted}, null, 2), {sync: true});
+    // Transfer recovery never needs to retain a NAS password; remembered SMB credentials
+    // live only in the mode-0600 SMB settings file.
+    FileSystem.writeFile(STATE_FILE, JSON.stringify({queue, interrupted}, (key, value) => key === 'password' ? '' : value, 2), {sync: true});
   } catch (err) {
     console.log(`DriveHop: save state failed: ${err.message}`);
   }
@@ -208,7 +276,7 @@ function Capacity({drive}) {
         <View className="h-[5px] rounded-full bg-mint" style={{width: `${width}%`}} />
       </View>
       <Text className={`${MUTED} text-[14px]`}>
-        {drive && drive.total ? `${formatBytes(drive.free)} free of ${formatBytes(drive.total)}` : 'Capacity unavailable'}
+        {drive && drive.total ? `${formatBytes(drive.free)} free of ${formatBytes(drive.total)}` : drive?.remote && drive.free ? `${formatBytes(drive.free)} available on NAS` : 'Capacity unavailable'}
       </Text>
     </View>
   );
@@ -257,8 +325,8 @@ function DrivePane({side, drive, games, selected, markedKeys, active, duplicateI
           <View focusable onPress={() => onRefresh(side)} className="w-[42px] h-[42px] rounded-xl border-[2px] border-edge items-center justify-center focused:border-mint focused:bg-raised">
             <Text className="font-inter text-[20px] text-mint">↻</Text>
           </View>
-          <View focusable={!!drive} onPress={() => drive && onSpeedTest(drive)} className="w-[42px] h-[42px] rounded-xl border-[2px] border-edge items-center justify-center focused:border-mint focused:bg-raised">
-            <Text className="font-inter text-[14px] text-mint">SPD</Text>
+          <View focusable={!!drive && !drive.remote} onPress={() => drive && !drive.remote && onSpeedTest(drive)} className="w-[42px] h-[42px] rounded-xl border-[2px] border-edge items-center justify-center focused:border-mint focused:bg-raised">
+            <Text className={`font-inter text-[14px] ${drive?.remote ? 'text-[#596174]' : 'text-mint'}`}>SPD</Text>
           </View>
         </View>
         <Capacity drive={drive} />
@@ -280,17 +348,18 @@ function DrivePane({side, drive, games, selected, markedKeys, active, duplicateI
       )}
       <View className="h-[36px] px-5 border-t-[1px] border-edge flex-row items-center justify-between">
         <Text className={`${markedKeys.length ? 'font-semi text-violet' : MUTED} text-[13px]`}>{markedKeys.length ? `${markedKeys.length} selected` : `${games.length} ${games.length === 1 ? 'game' : 'games'}`}</Text>
-        <Text className={`${MUTED} text-[13px]`}>{drive ? `${drive.root}/homebrew` : ''}</Text>
+        <Text className={`${MUTED} text-[13px]`}>{drive ? drive.remote ? 'Read-only SMB share' : `${drive.root}/homebrew` : ''}</Text>
       </View>
       </View>
     </FocusScope>
   );
 }
 
-function Shuttle({activeSide, selectionCount, onTransfer}) {
+function Shuttle({activeSide, selectionCount, nasSource, nasTarget, onTransfer}) {
   const right = activeSide === 'left';
   const arrow = right ? '→' : '←';
-  const disabled = !selectionCount;
+  const disabled = !selectionCount || nasTarget;
+  const moveDisabled = disabled || nasSource;
   return (
     <View className="w-[120px] h-[510px] items-center justify-center gap-4">
       <View className="w-[68px] h-[68px] rounded-full bg-[#17272a] border-[2px] border-[#315b57] items-center justify-center">
@@ -300,11 +369,11 @@ function Shuttle({activeSide, selectionCount, onTransfer}) {
         className={`w-[108px] h-[54px] rounded-xl border-[2px] items-center justify-center ${disabled ? 'border-edge bg-[#11141b]' : 'border-edge bg-raised focused:border-mint focused:bg-[#20313a]'}`}>
         <Text className={`font-inter text-[16px] ${disabled ? 'text-[#596174]' : 'text-white'}`}>Copy{selectionCount > 1 ? ` ${selectionCount}` : ''} {arrow}</Text>
       </View>
-      <View focusable={!disabled} onPress={() => !disabled && onTransfer('move')}
-        className={`w-[108px] h-[54px] rounded-xl border-[2px] items-center justify-center ${disabled ? 'border-edge bg-[#11141b]' : 'border-edge bg-raised focused:border-violet focused:bg-[#29223b]'}`}>
-        <Text className={`font-inter text-[16px] ${disabled ? 'text-[#596174]' : 'text-white'}`}>Move{selectionCount > 1 ? ` ${selectionCount}` : ''} {arrow}</Text>
+      <View focusable={!moveDisabled} onPress={() => !moveDisabled && onTransfer('move')}
+        className={`w-[108px] h-[54px] rounded-xl border-[2px] items-center justify-center ${moveDisabled ? 'border-edge bg-[#11141b]' : 'border-edge bg-raised focused:border-violet focused:bg-[#29223b]'}`}>
+        <Text className={`font-inter text-[16px] ${moveDisabled ? 'text-[#596174]' : 'text-white'}`}>Move{selectionCount > 1 ? ` ${selectionCount}` : ''} {arrow}</Text>
       </View>
-      <Text className={`${MUTED} text-[12px] text-center`}>{selectionCount > 1 ? 'Selected games run sequentially' : 'Square selects more games'}</Text>
+      <Text className={`${MUTED} text-[12px] text-center`}>{nasTarget ? 'NAS is read-only' : nasSource ? 'NAS copies only' : selectionCount > 1 ? 'Selected games run sequentially' : 'Square selects more games'}</Text>
     </View>
   );
 }
@@ -376,7 +445,9 @@ function ConfirmTransfer({mode, game, games, source, target, onConfirm, onQueue,
           <Text className={`${MUTED} text-[13px]`} numberOfLines={1}>{batch ? `${target.root}/homebrew` : destination}</Text>
         </View>
         <Text className={`${MUTED} text-[15px]`}>
-          {mode === 'move'
+          {primary.remote
+            ? 'DriveHop reads the NAS through authenticated SMB2/SMB3, stages each file, and checks the published size. The NAS is never modified.'
+            : mode === 'move'
             ? 'DriveHop copies to a hidden partial path, verifies every byte, publishes the destination, and only then removes the source.'
             : 'DriveHop keeps the source and verifies every byte before the destination becomes visible.'}
         </Text>
@@ -417,7 +488,7 @@ function TransferProgress({job, onCancel, onClose}) {
           </View>
         </View>
         {job.status === 'error' && <View className="rounded-xl bg-[#351b26] border-[1px] border-danger p-4"><Text className="font-inter text-[15px] text-[#fecdd3]">{job.error}</Text></View>}
-        {job.status === 'done' && <View className="rounded-xl bg-[#17322f] border-[1px] border-mint p-4"><Text className="font-inter text-[15px] text-[#bff8ee]">The destination was verified and published successfully.{job.mode === 'move' ? ' The original was removed.' : ''}</Text></View>}
+        {job.status === 'done' && <View className="rounded-xl bg-[#17322f] border-[1px] border-mint p-4"><Text className="font-inter text-[15px] text-[#bff8ee]">{job.game.remote ? 'The SMB transfer completed and the destination size was validated. The NAS was not modified.' : `The destination was verified and published successfully.${job.mode === 'move' ? ' The original was removed.' : ''}`}</Text></View>}
         <View className="flex-row justify-end">
           {finished ? (
             <View focusable autoFocus onPress={onClose} className={`${BUTTON} border-mint`}><Text className="font-inter text-[16px] text-mint">Done</Text></View>
@@ -475,6 +546,46 @@ function SpeedModal({test, onClose}) {
           <Text className={`${MUTED} text-[14px]`}>{test.error || (running ? 'Do not disconnect the drive' : 'Includes write plus byte verification')}</Text>
         </View>
         {!running && <View focusable autoFocus onPress={onClose} className={`${BUTTON} self-end`}><Text className={`${TEXT} text-[16px]`}>Done</Text></View>}
+      </View>
+    </Modal>
+  );
+}
+
+function SmbModal({state, server, pin, onRetry, onClose}) {
+  const listening = server?.state === 'listening';
+  const address = listening ? `http://${server.address}:${server.port}` : '';
+  const working = state.status === 'connecting' || state.status === 'scanning';
+  return (
+    <Modal onBack={() => !working && onClose()}>
+      <View className="w-[760px] rounded-3xl border-[2px] border-edge bg-panel p-8 gap-6">
+        <View className="flex-row items-center justify-between">
+          <View className="gap-1"><Text className="font-semi text-white text-[30px]">NAS / SMB</Text><Text className={`${MUTED} text-[15px]`}>SMB2 or SMB3 • NAS stays read-only</Text></View>
+          <View className="px-4 h-[34px] rounded-full bg-[#142623] items-center justify-center"><Text className="font-semi text-[12px] text-mint">LOCAL NETWORK ONLY</Text></View>
+        </View>
+        {state.status === 'connected' ? (
+          <View className="rounded-2xl bg-[#15332e] border-[1px] border-mint p-6 gap-2">
+            <Text className="font-semi text-[22px] text-[#bff8ee]">NAS connected</Text>
+            <Text className={`${MUTED} text-[15px]`}>{state.message}</Text>
+          </View>
+        ) : state.status === 'error' ? (
+          <View className="rounded-2xl bg-[#351b26] border-[1px] border-danger p-5 gap-2"><Text className="font-semi text-[19px] text-[#fecdd3]">Could not connect</Text><Text className="font-inter text-[14px] text-[#fecdd3]">{state.message}</Text></View>
+        ) : working ? (
+          <View className="h-[180px] rounded-2xl bg-[#0c1019] border-[1px] border-edge items-center justify-center gap-3"><Text className="font-heavy text-[30px] text-mint">{state.status === 'scanning' ? 'Scanning games…' : 'Connecting…'}</Text><Text className={`${MUTED} text-[14px]`}>{state.message}</Text></View>
+        ) : (
+          <View className="gap-4">
+            <Text className={`${MUTED} text-[15px]`}>Open this address on a phone or computer connected to the same network, then enter the PIN.</Text>
+            <View className="rounded-2xl bg-[#0c1019] border-[1px] border-edge p-5 gap-4">
+              <View className="flex-row justify-between"><Text className={`${MUTED} text-[14px]`}>SETUP PAGE</Text><Text className={`${TEXT} text-[17px]`}>{address || (server?.state === 'failed' ? server.error : 'Starting…')}</Text></View>
+              <View className="h-[1px] bg-edge" />
+              <View className="flex-row justify-between items-center"><Text className={`${MUTED} text-[14px]`}>SIGN-IN PIN</Text><Text className="font-heavy text-[34px] text-mint">{pin}</Text></View>
+            </View>
+            <Text className={`${MUTED} text-[13px]`}>The password stays in memory unless you explicitly select Remember password. Saved credentials are restricted to the app account.</Text>
+          </View>
+        )}
+        <View className="flex-row justify-end gap-3">
+          {state.status === 'error' && <View focusable onPress={onRetry} className={`${BUTTON} border-mint`}><Text className="font-inter text-[16px] text-mint">Try setup again</Text></View>}
+          {!working && <View focusable autoFocus onPress={onClose} className={BUTTON}><Text className={`${TEXT} text-[16px]`}>{state.status === 'connected' ? 'Done' : 'Close'}</Text></View>}
+        </View>
       </View>
     </Modal>
   );
@@ -573,10 +684,73 @@ function App() {
   const [cacheModal, setCacheModal] = useState(null);
   const [partials, setPartials] = useState([]);
   const [speedTest, setSpeedTest] = useState(null);
+  const [smbOpen, setSmbOpen] = useState(false);
+  const [smbState, setSmbState] = useState({status: 'setup', message: ''});
+  const [smbServer, setSmbServer] = useState({state: 'stopped', address: '', port: 0, error: ''});
+  const [smbConfig, setSmbConfig] = useState(loadSmbConfig);
   const taskRef = useRef(null);
   const catalogRef = useRef([]);
   const cacheTokenRef = useRef('');
+  const smbKeyRef = useRef(randomSmbKey());
+  const smbPinRef = useRef(String(100000 + Math.floor(Math.random() * 900000)));
   useHaptics();
+
+  const connectAndScanSmb = async rawConfig => {
+    let config;
+    try { config = validateSmbConfig(rawConfig); } catch (err) {
+      setSmbState({status: 'error', message: err.message || String(err)}); return;
+    }
+    setSmbConfig(config);
+    try { saveSmbConfig(config); } catch (err) { /* a session-only connection can still proceed */ }
+    setSmbState({status: 'connecting', message: `Signing in to ${config.host}…`});
+    try {
+      await startSmbDaemon(smbKeyRef.current);
+      const connection = smbConnectionFields(config);
+      const probe = smbRpc(smbKeyRef.current, {op: 'probe', ...connection, path: config.folder});
+      setSmbState({status: 'scanning', message: `Reading ${config.share}${config.folder ? ` / ${config.folder}` : ''}`});
+      const started = smbRpc(smbKeyRef.current, {op: 'scan', ...connection, source: 'drivehop', path: config.folder});
+      await waitSmbJob(smbKeyRef.current, started.job, progress => {
+        setSmbState({status: 'scanning', message: `${progress.files_done || 0} entries checked • ${progress.files_total || 0} games found`});
+      });
+      const catalogue = JSON.parse(FileSystem.readFile(SMB_CATALOG_FILE));
+      const games = gamesFromSmbCatalogue(catalogue, config);
+      const drive = smbDrive(config, probe.free);
+      setDrives(previous => [...previous.filter(item => item.id !== 'smb'), drive]);
+      setLeftDrive(previous => previous?.remote ? drive : previous);
+      setRightDrive(previous => previous?.remote ? drive : previous);
+      setLibraries(previous => ({
+        left: leftDrive?.remote ? games : previous.left,
+        right: rightDrive?.remote ? games : previous.right,
+      }));
+      setSmbState({status: 'connected', message: `${games.length} compatible game${games.length === 1 ? '' : 's'} found on ${drive.label}. Select NAS / SMB from either drive menu.`});
+      try { Notifications.show('DriveHop NAS connected', `${games.length} compatible games found`); } catch (err) { /* optional */ }
+    } catch (err) {
+      setDrives(previous => previous.filter(item => item.id !== 'smb'));
+      setSmbState({status: 'error', message: err.message || String(err)});
+    }
+  };
+
+  useEffect(() => {
+    if (!smbOpen) return undefined;
+    LocalServer.start({ports: [34177, 0], pin: smbPinRef.current, page: SMB_COMPANION_PAGE, session: LocalServer.token()});
+    const timer = setInterval(() => {
+      setSmbServer(LocalServer.status());
+      for (const request of LocalServer.poll()) {
+        if (request.method !== 'POST' || request.path !== '/api/smb-config') {
+          LocalServer.respond(request.id, 404, 'application/json', JSON.stringify({error: 'Unknown request.'}));
+          continue;
+        }
+        try {
+          const config = validateSmbConfig(JSON.parse(request.body));
+          LocalServer.respond(request.id, 202, 'application/json', JSON.stringify({accepted: true}));
+          connectAndScanSmb(config);
+        } catch (err) {
+          LocalServer.respond(request.id, 400, 'application/json', JSON.stringify({error: err.message || String(err)}));
+        }
+      }
+    }, 100);
+    return () => { clearInterval(timer); LocalServer.stop(); };
+  }, [smbOpen]);
 
   useEffect(() => { savePersistentState(queue, interrupted); }, [queue, interrupted]);
 
@@ -591,6 +765,10 @@ function App() {
         return {...previous, [side]: next};
       });
     };
+    if (current?.remote) {
+      await connectAndScanSmb(current.config || smbConfig);
+      return;
+    }
     const scanned = scanDrive(current);
     publish(enrichGames(scanned, catalogRef.current, SHADOWMOUNT_API, cacheTokenRef.current));
     const catalog = await loadShadowMountCatalog();
@@ -616,6 +794,8 @@ function App() {
       });
       setPartials(scanPartials(found));
       setPhase('ready');
+      const remembered = loadSmbConfig();
+      if (remembered && (remembered.password || !remembered.user)) connectAndScanSmb(remembered);
     }).catch(err => {
       console.log(`DriveHop startup: ${err.message}`);
       setPhase('ready');
@@ -625,7 +805,11 @@ function App() {
 
   const chooseDrive = (side, drive) => {
     if (side === 'left') setLeftDrive(drive); else setRightDrive(drive);
-    const games = enrichGames(scanDrive(drive), catalogRef.current, SHADOWMOUNT_API, cacheTokenRef.current);
+    let games;
+    if (drive.remote) {
+      try { games = gamesFromSmbCatalogue(JSON.parse(FileSystem.readFile(SMB_CATALOG_FILE)), drive.config); }
+      catch (err) { games = []; }
+    } else games = enrichGames(scanDrive(drive), catalogRef.current, SHADOWMOUNT_API, cacheTokenRef.current);
     setLibraries(previous => ({...previous, [side]: games}));
     setSelected(previous => ({...previous, [side]: games[0] || null}));
     setMarked(previous => ({...previous, [side]: []}));
@@ -645,6 +829,7 @@ function App() {
 
   const requestTransfer = mode => {
     if (!chosenGames.length || !sourceDrive || !targetDrive) return;
+    if (targetDrive.remote || (sourceDrive.remote && mode === 'move')) return;
     const destinations = new Set();
     for (const game of chosenGames) {
       const destination = destinationPath(targetDrive, game.sourceName);
@@ -680,21 +865,41 @@ function App() {
     try {
       FileSystem.mkdir(joinPath(request.target.root, 'homebrew'), {recursive: true});
       if (FileSystem.exists(destination)) throw new Error(`Destination already exists: ${destination}`);
-      const currentIdentity = FileSystem.stat(request.game.path);
-      if (!sameIdentity(request.game.identity, currentIdentity)) throw new Error('The source changed after it was selected. Refresh and try again.');
       const startedAt = Date.now();
       const initial = {state: 'copying', written: 0, verified: 0, total: request.game.size || 0, files: 0};
       setJob({status: 'running', mode: request.mode, game: request.game, snapshot: initial, startedAt, destination});
       Power.keepAwake(true);
-      const task = FileSystem.copyAsync(request.game.path, destination, {verify: true, resume: true, receipt: false});
-      taskRef.current = task;
-      const unsubscribe = task.subscribe(snapshot => setJob(previous => previous && ({...previous, snapshot})));
-      try { await task.done; } finally { unsubscribe(); taskRef.current = null; }
-      if (request.mode === 'move') {
-        const afterCopyIdentity = FileSystem.stat(request.game.path);
-        if (!sameIdentity(currentIdentity, afterCopyIdentity)) throw new Error('Copy verified, but the source changed during transfer. It was not deleted.');
-        await FileSystem.removeAsync(request.game.path);
-        writeManualMove(request.game.path, destination, request.game.titleId);
+      if (request.game.remote) {
+        if (!smbConfig) throw new Error('Reconnect the NAS before starting this transfer.');
+        await startSmbDaemon(smbKeyRef.current);
+        const staging = `${destination}.partial`;
+        if (FileSystem.exists(staging)) await FileSystem.removeAsync(staging);
+        const started = smbRpc(smbKeyRef.current, {op: 'copy', ...smbConnectionFields(smbConfig), dir: 'down',
+          src: request.game.path, dest: staging, overwrite: false});
+        taskRef.current = {cancel: () => { try { smbRpc(smbKeyRef.current, {op: 'cancel', job: started.job}); } catch (err) { /* best effort */ } }};
+        await waitSmbJob(smbKeyRef.current, started.job, progress => setJob(previous => previous && ({...previous,
+          snapshot: {state: progress.scanning ? 'scanning' : 'copying', written: Number(progress.bytes_done || 0),
+            verified: 0, total: Number(progress.bytes_total || request.game.size || 0), files: Number(progress.files_done || 0)}})));
+        taskRef.current = null;
+        const copied = FileSystem.stat(staging);
+        if (request.game.kind !== 'folder' && request.game.size && Number(copied.size) !== Number(request.game.size)) {
+          throw new Error('The NAS transfer finished but the destination size did not match the source.');
+        }
+        if (FileSystem.exists(destination)) throw new Error(`Destination appeared during the NAS transfer: ${destination}`);
+        FileSystem.rename(staging, destination);
+      } else {
+        const currentIdentity = FileSystem.stat(request.game.path);
+        if (!sameIdentity(request.game.identity, currentIdentity)) throw new Error('The source changed after it was selected. Refresh and try again.');
+        const task = FileSystem.copyAsync(request.game.path, destination, {verify: true, resume: true, receipt: false});
+        taskRef.current = task;
+        const unsubscribe = task.subscribe(snapshot => setJob(previous => previous && ({...previous, snapshot})));
+        try { await task.done; } finally { unsubscribe(); taskRef.current = null; }
+        if (request.mode === 'move') {
+          const afterCopyIdentity = FileSystem.stat(request.game.path);
+          if (!sameIdentity(currentIdentity, afterCopyIdentity)) throw new Error('Copy verified, but the source changed during transfer. It was not deleted.');
+          await FileSystem.removeAsync(request.game.path);
+          writeManualMove(request.game.path, destination, request.game.titleId);
+        }
       }
       try { FileSystem.chmod(destination, 0o777); } catch (err) { /* source permissions were preserved */ }
       await refreshShadowMount(request.game.titleId);
@@ -713,6 +918,7 @@ function App() {
       setPartials(scanPartials(drives));
       return false;
     } finally {
+      taskRef.current = null;
       Power.keepAwake(false);
     }
   };
@@ -852,6 +1058,7 @@ function App() {
   };
 
   const closeTop = () => {
+    if (smbOpen) { setSmbOpen(false); return true; }
     if (picker) { setPicker(null); return true; }
     if (confirm) { setConfirm(null); return true; }
     if (queueOpen) { setQueueOpen(false); return true; }
@@ -869,7 +1076,7 @@ function App() {
   const markedCount = marked.left.length + marked.right.length;
   const handleAction = action => {
     if (action !== 'square') return false;
-    if (picker || confirm || queueOpen || recoveryOpen || cacheModal || speedTest || job) return false;
+    if (picker || confirm || queueOpen || recoveryOpen || cacheModal || speedTest || job || smbOpen) return false;
     const game = selected[activeSide];
     if (!game) return true;
     setMarked(previous => {
@@ -900,6 +1107,10 @@ function App() {
           </View>
           <View className="flex-row items-center gap-3">
             <View className="px-4 h-[36px] rounded-full bg-[#142623] items-center justify-center"><Text className="font-inter text-[13px] text-mint">BYTE-VERIFIED</Text></View>
+            <View focusable={!cacheDisabled} onPress={() => { if (!cacheDisabled) { setSmbState({status: 'setup', message: ''}); setSmbOpen(true); } }}
+              className={`h-[38px] px-4 rounded-xl border-[2px] items-center justify-center ${cacheDisabled ? 'border-edge bg-[#11141b]' : 'border-edge bg-raised focused:border-mint'}`}>
+              <Text className={`font-inter text-[14px] ${cacheDisabled ? 'text-[#596174]' : 'text-mint'}`}>NAS / SMB</Text>
+            </View>
             <View focusable={!cacheDisabled} onPress={() => !cacheDisabled && setCacheModal({status: 'confirm', message: ''})}
               className={`h-[38px] px-4 rounded-xl border-[2px] items-center justify-center ${cacheDisabled ? 'border-edge bg-[#11141b]' : 'border-edge bg-raised focused:border-mint'}`}>
               <Text className={`font-inter text-[14px] ${cacheDisabled ? 'text-[#596174]' : 'text-mint'}`}>Clear Cache</Text>
@@ -917,7 +1128,8 @@ function App() {
         <View className="flex-1 px-10 py-5 flex-row justify-center">
           <DrivePane side="left" drive={leftDrive} games={libraries.left} selected={selected.left} active={activeSide === 'left'}
             markedKeys={marked.left} duplicateIds={duplicateIds} onChooseDrive={setPicker} onSelect={selectGame} onRefresh={side => refresh(side)} onSpeedTest={runSpeedTest} />
-          <Shuttle activeSide={activeSide} selectionCount={targetDrive ? chosenGames.length : 0} onTransfer={requestTransfer} />
+          <Shuttle activeSide={activeSide} selectionCount={targetDrive ? chosenGames.length : 0}
+            nasSource={!!sourceDrive?.remote} nasTarget={!!targetDrive?.remote} onTransfer={requestTransfer} />
           <DrivePane side="right" drive={rightDrive} games={libraries.right} selected={selected.right} active={activeSide === 'right'}
             markedKeys={marked.right} duplicateIds={duplicateIds} onChooseDrive={setPicker} onSelect={selectGame} onRefresh={side => refresh(side)} onSpeedTest={runSpeedTest} />
         </View>
@@ -934,6 +1146,8 @@ function App() {
         {recoveryOpen && <RecoveryModal partials={partials} interrupted={interrupted} onResume={resumeInterrupted} onDelete={removePartial} onClose={() => setRecoveryOpen(false)} />}
         {!!cacheModal && <CacheModal state={cacheModal} onClear={clearAppCache} onClose={() => setCacheModal(null)} />}
         {!!speedTest && <SpeedModal test={speedTest} onClose={() => setSpeedTest(null)} />}
+        {smbOpen && <SmbModal state={smbState} server={smbServer} pin={smbPinRef.current}
+          onRetry={() => setSmbState({status: 'setup', message: ''})} onClose={() => setSmbOpen(false)} />}
         {!!job && <TransferProgress job={job} onCancel={() => taskRef.current && taskRef.current.cancel()} onClose={() => setJob(null)} />}
       </View>
     </FocusScope>

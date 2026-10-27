@@ -3,10 +3,13 @@
   "titleId": "PPSA99777",
   "contentId": "UP9000-PPSA99777_00-DRIVEHOP00000001",
   "name": "DriveHop",
-  "version": "01.005.000",
+  "version": "01.006.000",
   "resolution": "auto",
   "refreshRate": 60,
   "timeoutSeconds": 0,
   "filesystemAccess": "console",
-  "networking": true
+  "networking": true,
+  "payloads": [
+    {"source": "smb_bridge.c", "name": "smb-bridge.elf"}
+  ]
 }
