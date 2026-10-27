@@ -76,7 +76,7 @@ PATH="$PWD/.venv/bin:$PATH" npm run build -- --app-dir ../DriveHop/app/drivehop
 
 The result is written under PS5 React's `dist/PPSA99777` directory. From Windows,
 use the included GitHub Actions workflow: GitHub's `macos-15` runner is an M1
-Mac and produces a checksummed `DriveHop-PPSA99777-v0.4.0` artifact. See
+Mac and produces a checksummed `DriveHop-PPSA99777-v0.5.0` artifact. See
 [`docs/BUILD-ON-GITHUB.md`](docs/BUILD-ON-GITHUB.md).
 
 Run the platform-neutral model tests anywhere Node.js is available:
@@ -87,12 +87,21 @@ npm test
 
 ## Install on the PS5
 
-1. Build or download the `PPSA99777` folder artifact.
-2. Copy the folder to `/data/homebrew/PPSA99777`.
-3. Run the filesystem-access prerequisite used by PS5 React (resident Lapy or a
-   compatible ELF loader on port `9021`).
-4. Run ShadowMountPlus and let it register the folder.
-5. Close any running game, then open **DriveHop** from the Games row.
+1. Download `DriveHop-Installer-v0.5.0.elf` from the build artifact.
+2. Close DriveHop if it is already running, then send the installer to the PS5's
+   ELF loader on port `9021` using Payload Manager or another payload sender.
+3. Wait for the installation notification. The installer stages and verifies
+   every embedded file, atomically installs `/data/homebrew/PPSA99777`, applies
+   mode `0777` recursively, and asks ShadowMountPlus to rescan.
+4. Open **DriveHop** from the Games row. If the notification says
+   ShadowMountPlus was unavailable, start it first.
+
+The installer is offline: it does not download code or require GitHub access
+from the console. Failed updates retain the previous installation. Its log is
+written to `/data/drivehop/installer.log`.
+
+For recovery or manual installation, extract `DriveHop-PPSA99777-v0.5.0.zip`
+and copy its complete `PPSA99777` folder to `/data/homebrew/PPSA99777`.
 
 Release archives explicitly store mode `0777` on every directory and file. The
 workflow rejects an archive containing any other mode. The artifact also includes

@@ -15,17 +15,20 @@ repositories.
 
 The workflow confirms `uname -m` is `arm64`, installs the pinned build
 dependencies, builds with the current PS5 React project, and creates a checksummed
-artifact named `DriveHop-PPSA99777-v0.4.0`.
+artifact named `DriveHop-PPSA99777-v0.5.0`.
 
 ## Download and install
 
 1. Open the completed workflow run.
-2. Download `DriveHop-PPSA99777-v0.4.0` from **Artifacts**.
-3. Extract the artifact, then extract `DriveHop-PPSA99777-v0.4.0.zip`. Every
-   entry records mode `0777`; a permissions-preserving `.tar.gz` is included too.
-4. Copy the complete `PPSA99777` folder to `/data/homebrew/PPSA99777` on the PS5.
-5. Start the filesystem-access prerequisite used by PS5 React, then run
-   ShadowMountPlus so it registers the title.
+2. Download `DriveHop-PPSA99777-v0.5.0` from **Artifacts** and extract it.
+3. Close DriveHop if it is running. Send `DriveHop-Installer-v0.5.0.elf` to the
+   PS5's ELF loader on port `9021` with Payload Manager or another sender.
+4. Wait for the completion notification. The installer embeds the full app,
+   verifies it on the console, applies `0777` recursively and requests a
+   ShadowMountPlus rescan.
+
+The ZIP and permissions-preserving `.tar.gz` in the artifact remain available
+for manual or recovery installation.
 
 Do not upload only `eboot.bin`: the `sce_sys`, `sce_module`, notices and helper
 files next to it are part of the application.
