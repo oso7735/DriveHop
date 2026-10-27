@@ -211,9 +211,10 @@ function GameRow({game, selected, duplicate, side, index, onSelect}) {
     <View focusable autoFocus={index === 0} onFocus={() => onSelect(game, side)} onPress={() => onSelect(game, side)}
       className={`h-[76px] px-3 flex-row items-center gap-3 rounded-xl border-[2px] ${selected ? 'border-violet bg-[#242039]' : 'border-transparent bg-transparent'} focused:border-mint focused:bg-raised`}>
       <View className={`w-[48px] h-[48px] rounded-xl overflow-hidden items-center justify-center ${game.kind === 'folder' ? 'bg-[#2b4160]' : 'bg-[#253c39]'}`}>
-        <Text className="font-inter text-[21px] text-white">{initial}</Text>
-        {!!game.iconUrl && !iconFailed && <Image source={{uri: game.iconUrl}} resizeMode="cover"
-          onError={() => setIconFailed(true)} style={{position: 'absolute', left: 0, top: 0, width: 48, height: 48, borderRadius: 12}} />}
+        {!!game.iconUrl && !iconFailed
+          ? <Image source={{uri: game.iconUrl}} resizeMode="cover" onError={() => setIconFailed(true)}
+              className="w-[48px] h-[48px] rounded-xl" />
+          : <Text className="font-inter text-[21px] text-white">{initial}</Text>}
       </View>
       <View className="flex-1 gap-1 overflow-hidden">
         <Text className={`${TEXT} text-[18px]`} numberOfLines={1}>{game.name}</Text>

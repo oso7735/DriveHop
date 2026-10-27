@@ -15,13 +15,13 @@ repositories.
 
 The workflow confirms `uname -m` is `arm64`, installs the pinned build
 dependencies, builds with the current PS5 React project, and creates a checksummed
-artifact named `DriveHop-PPSA99777-v0.3.1`.
+artifact named `DriveHop-PPSA99777-v0.3.2`.
 
 ## Download and install
 
 1. Open the completed workflow run.
-2. Download `DriveHop-PPSA99777-v0.3.1` from **Artifacts**.
-3. Extract the artifact, then extract `DriveHop-PPSA99777-v0.3.1.zip`. Every
+2. Download `DriveHop-PPSA99777-v0.3.2` from **Artifacts**.
+3. Extract the artifact, then extract `DriveHop-PPSA99777-v0.3.2.zip`. Every
    entry records mode `0777`; a permissions-preserving `.tar.gz` is included too.
 4. Copy the complete `PPSA99777` folder to `/data/homebrew/PPSA99777` on the PS5.
 5. Start the filesystem-access prerequisite used by PS5 React, then run
