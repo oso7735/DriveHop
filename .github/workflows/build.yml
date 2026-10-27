@@ -64,10 +64,10 @@ jobs:
             exit 1
           fi
           mkdir release
-          ditto -c -k --sequesterRsrc --keepParent ps5-react/dist/PPSA99777 release/DriveHop-PPSA99777-v0.3.3.zip
-          python3 -c 'import pathlib,sys,zipfile; p=pathlib.Path("release/DriveHop-PPSA99777-v0.3.3.zip"); bad=[(i.filename, oct((i.external_attr >> 16) & 0o777)) for i in zipfile.ZipFile(p).infolist() if ((i.external_attr >> 16) & 0o777) != 0o777]; print("Verified ZIP mode 0777 for every entry") if not bad else (print("Invalid ZIP permissions:", bad, file=sys.stderr) or sys.exit(1))'
-          tar -czf release/DriveHop-PPSA99777-v0.3.3-permissions.tar.gz -C ps5-react/dist PPSA99777
-          git -C DriveHop archive --format=zip --output=../release/DriveHop-source-v0.3.3.zip HEAD
+          ditto -c -k --sequesterRsrc --keepParent ps5-react/dist/PPSA99777 release/DriveHop-PPSA99777-v0.3.4.zip
+          python3 -c 'import pathlib,sys,zipfile; p=pathlib.Path("release/DriveHop-PPSA99777-v0.3.4.zip"); bad=[(i.filename, oct((i.external_attr >> 16) & 0o777)) for i in zipfile.ZipFile(p).infolist() if ((i.external_attr >> 16) & 0o777) != 0o777]; print("Verified ZIP mode 0777 for every entry") if not bad else (print("Invalid ZIP permissions:", bad, file=sys.stderr) or sys.exit(1))'
+          tar -czf release/DriveHop-PPSA99777-v0.3.4-permissions.tar.gz -C ps5-react/dist PPSA99777
+          git -C DriveHop archive --format=zip --output=../release/DriveHop-source-v0.3.4.zip HEAD
           if test -f ps5-react/dist/PPSA99777.receipt.json; then
             cp ps5-react/dist/PPSA99777.receipt.json release/
           fi
@@ -75,7 +75,7 @@ jobs:
           shasum -a 256 * > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: DriveHop-PPSA99777-v0.3.3
+          name: DriveHop-PPSA99777-v0.3.4
           path: release/
           if-no-files-found: error
           retention-days: 14

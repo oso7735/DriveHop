@@ -231,7 +231,8 @@ function GameRow({game, selected, duplicate, side, index, onSelect}) {
 
 function DrivePane({side, drive, games, selected, active, duplicateIds, onChooseDrive, onSelect, onRefresh, onSpeedTest}) {
   return (
-    <View className={`w-[535px] h-[510px] rounded-2xl border-[2px] ${active ? 'border-[#45526d]' : 'border-edge'} bg-panel overflow-hidden`}>
+    <FocusScope ends={['up', 'down']}>
+      <View className={`w-[535px] h-[510px] rounded-2xl border-[2px] ${active ? 'border-[#45526d]' : 'border-edge'} bg-panel overflow-hidden`}>
       <View className="h-[100px] px-5 pt-4 border-b-[1px] border-edge gap-3">
         <View className="flex-row items-center justify-between">
           <View focusable onPress={() => onChooseDrive(side)} className="h-[42px] min-w-[230px] px-4 rounded-xl border-[2px] border-edge bg-raised flex-row items-center gap-3 focused:border-mint">
@@ -267,7 +268,8 @@ function DrivePane({side, drive, games, selected, active, duplicateIds, onChoose
         <Text className={`${MUTED} text-[13px]`}>{games.length} {games.length === 1 ? 'game' : 'games'}</Text>
         <Text className={`${MUTED} text-[13px]`}>{drive ? `${drive.root}/homebrew` : ''}</Text>
       </View>
-    </View>
+      </View>
+    </FocusScope>
   );
 }
 

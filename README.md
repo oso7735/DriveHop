@@ -15,6 +15,8 @@ This project is independent homebrew and is not affiliated with Sony.
   `/mnt/usb7`) discovery, selection and capacity reporting.
 - Dual-pane libraries that scan each drive's `homebrew`, `etaHEN/games`, and
   (for removable drives) top-level directory.
+- Vertical navigation stays inside its current pane; Left/Right explicitly
+  switches panes.
 - Extracted game folders plus `.ffpkg`, `.exfat`, `.ffpfs` and `.ffpfsc` images.
 - Real game names and tile artwork from ShadowMountPlus's local game catalog;
   installed app metadata and filename-based labels remain as offline fallbacks.
@@ -67,7 +69,7 @@ PATH="$PWD/.venv/bin:$PATH" npm run build -- --app-dir ../DriveHop/app/drivehop
 
 The result is written under PS5 React's `dist/PPSA99777` directory. From Windows,
 use the included GitHub Actions workflow: GitHub's `macos-15` runner is an M1
-Mac and produces a checksummed `DriveHop-PPSA99777-v0.3.3` artifact. See
+Mac and produces a checksummed `DriveHop-PPSA99777-v0.3.4` artifact. See
 [`docs/BUILD-ON-GITHUB.md`](docs/BUILD-ON-GITHUB.md).
 
 Run the platform-neutral model tests anywhere Node.js is available:
