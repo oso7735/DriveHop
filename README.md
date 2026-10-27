@@ -17,6 +17,9 @@ This project is independent homebrew and is not affiliated with Sony.
   (for removable drives) top-level directory.
 - Vertical navigation stays inside its current pane; Left/Right explicitly
   switches panes.
+- Square toggles multi-select in either pane. Copy and Move preflight the whole
+  active-pane selection, then run each byte-verified transfer sequentially or
+  add the complete batch to the persistent queue.
 - A guarded **Clear Cache** action invalidates DriveHop artwork/metadata,
   removes its disposable speed-test file, resets ShadowMountPlus scan attempts,
   and requests a full library rescan. It never deletes games, saves, `app.db`,
@@ -73,7 +76,7 @@ PATH="$PWD/.venv/bin:$PATH" npm run build -- --app-dir ../DriveHop/app/drivehop
 
 The result is written under PS5 React's `dist/PPSA99777` directory. From Windows,
 use the included GitHub Actions workflow: GitHub's `macos-15` runner is an M1
-Mac and produces a checksummed `DriveHop-PPSA99777-v0.3.5` artifact. See
+Mac and produces a checksummed `DriveHop-PPSA99777-v0.4.0` artifact. See
 [`docs/BUILD-ON-GITHUB.md`](docs/BUILD-ON-GITHUB.md).
 
 Run the platform-neutral model tests anywhere Node.js is available:

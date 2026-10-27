@@ -6,7 +6,7 @@ import {
   Image, Notifications, Power, ScrollView, Text, View, useNavigationEvents,
 } from '@ps5-react/core';
 import {
-  DRIVE_SPECS, basename, destinationPath, displayNameFromFile, etaText,
+  DRIVE_SPECS, activeSelection, basename, destinationPath, displayNameFromFile, etaText,
   enrichGames, formatBytes, formatForName, isAllowedImage, isPartial, joinPath, libraryPaths,
   duplicateTitleIds, percentOf, queueSpaceNeeds, sameIdentity, speedText,
   titleIdFrom, transferKey, updateManualListText,
@@ -214,13 +214,13 @@ function Capacity({drive}) {
   );
 }
 
-function GameRow({game, selected, duplicate, side, index, onSelect}) {
+function GameRow({game, selected, marked, duplicate, side, index, onSelect}) {
   const [iconFailed, setIconFailed] = useState(false);
   useEffect(() => setIconFailed(false), [game.iconUrl]);
   const initial = (game.name || game.titleId || '?').replace(/^PPSA\d{5}\s*/i, '').trim().slice(0, 1).toUpperCase() || '?';
   return (
     <View focusable autoFocus={index === 0} onFocus={() => onSelect(game, side)} onPress={() => onSelect(game, side)}
-      className={`h-[76px] px-3 flex-row items-center gap-3 rounded-xl border-[2px] ${selected ? 'border-violet bg-[#242039]' : 'border-transparent bg-transparent'} focused:border-mint focused:bg-raised`}>
+      className={`h-[76px] px-3 flex-row items-center gap-3 rounded-xl border-[2px] ${marked ? 'border-violet bg-[#242039]' : selected ? 'border-[#45526d] bg-[#171d2b]' : 'border-transparent bg-transparent'} focused:border-mint focused:bg-raised`}>
       <View className={`w-[48px] h-[48px] rounded-xl overflow-hidden items-center justify-center ${game.kind === 'folder' ? 'bg-[#2b4160]' : 'bg-[#253c39]'}`}>
         {!!game.iconUrl && !iconFailed
           ? <Image source={{uri: game.iconUrl}} resizeMode="cover" onError={() => setIconFailed(true)}
@@ -236,11 +236,14 @@ function GameRow({game, selected, duplicate, side, index, onSelect}) {
           {duplicate && <Text className="font-semi text-[11px] text-violet">ON BOTH</Text>}
         </View>
       </View>
+      <View className={`w-[22px] h-[22px] rounded-md border-[2px] items-center justify-center ${marked ? 'border-violet bg-violet' : 'border-[#45526d] bg-transparent'}`}>
+        {marked && <View className="w-[8px] h-[8px] rounded-sm bg-white" />}
+      </View>
     </View>
   );
 }
 
-function DrivePane({side, drive, games, selected, active, duplicateIds, onChooseDrive, onSelect, onRefresh, onSpeedTest}) {
+function DrivePane({side, drive, games, selected, markedKeys, active, duplicateIds, onChooseDrive, onSelect, onRefresh, onSpeedTest}) {
   return (
     <FocusScope ends={['up', 'down']}>
       <View className={`w-[535px] h-[510px] rounded-2xl border-[2px] ${active ? 'border-[#45526d]' : 'border-edge'} bg-panel overflow-hidden`}>
@@ -249,13 +252,13 @@ function DrivePane({side, drive, games, selected, active, duplicateIds, onChoose
           <View focusable onPress={() => onChooseDrive(side)} className="h-[42px] min-w-[230px] px-4 rounded-xl border-[2px] border-edge bg-raised flex-row items-center gap-3 focused:border-mint">
             <View className={`w-[9px] h-[9px] rounded-full ${drive ? 'bg-mint' : 'bg-danger'}`} />
             <Text className={`${TEXT} text-[18px]`}>{drive ? drive.label : 'Select a drive'}</Text>
-            <Text className={`${MUTED} text-[16px]`}>▾</Text>
+            <Text className={`${MUTED} text-[16px]`}>v</Text>
           </View>
           <View focusable onPress={() => onRefresh(side)} className="w-[42px] h-[42px] rounded-xl border-[2px] border-edge items-center justify-center focused:border-mint focused:bg-raised">
             <Text className="font-inter text-[20px] text-mint">↻</Text>
           </View>
           <View focusable={!!drive} onPress={() => drive && onSpeedTest(drive)} className="w-[42px] h-[42px] rounded-xl border-[2px] border-edge items-center justify-center focused:border-mint focused:bg-raised">
-            <Text className="font-inter text-[19px] text-mint">⚡</Text>
+            <Text className="font-inter text-[14px] text-mint">SPD</Text>
           </View>
         </View>
         <Capacity drive={drive} />
@@ -264,7 +267,7 @@ function DrivePane({side, drive, games, selected, active, duplicateIds, onChoose
         <ScrollView className="flex-1">
           <View className="px-3 py-2 gap-1">
             {games.map((game, index) => <GameRow key={game.key} game={game} index={index} side={side}
-              selected={selected && selected.key === game.key} duplicate={duplicateIds.has(game.titleId)} onSelect={onSelect} />)}
+              selected={selected && selected.key === game.key} marked={markedKeys.includes(game.key)} duplicate={duplicateIds.has(game.titleId)} onSelect={onSelect} />)}
           </View>
         </ScrollView>
       ) : (
@@ -276,7 +279,7 @@ function DrivePane({side, drive, games, selected, active, duplicateIds, onChoose
         </View>
       )}
       <View className="h-[36px] px-5 border-t-[1px] border-edge flex-row items-center justify-between">
-        <Text className={`${MUTED} text-[13px]`}>{games.length} {games.length === 1 ? 'game' : 'games'}</Text>
+        <Text className={`${markedKeys.length ? 'font-semi text-violet' : MUTED} text-[13px]`}>{markedKeys.length ? `${markedKeys.length} selected` : `${games.length} ${games.length === 1 ? 'game' : 'games'}`}</Text>
         <Text className={`${MUTED} text-[13px]`}>{drive ? `${drive.root}/homebrew` : ''}</Text>
       </View>
       </View>
@@ -284,10 +287,10 @@ function DrivePane({side, drive, games, selected, active, duplicateIds, onChoose
   );
 }
 
-function Shuttle({activeSide, selection, onTransfer}) {
+function Shuttle({activeSide, selectionCount, onTransfer}) {
   const right = activeSide === 'left';
   const arrow = right ? '→' : '←';
-  const disabled = !selection;
+  const disabled = !selectionCount;
   return (
     <View className="w-[120px] h-[510px] items-center justify-center gap-4">
       <View className="w-[68px] h-[68px] rounded-full bg-[#17272a] border-[2px] border-[#315b57] items-center justify-center">
@@ -295,13 +298,13 @@ function Shuttle({activeSide, selection, onTransfer}) {
       </View>
       <View focusable={!disabled} onPress={() => !disabled && onTransfer('copy')}
         className={`w-[108px] h-[54px] rounded-xl border-[2px] items-center justify-center ${disabled ? 'border-edge bg-[#11141b]' : 'border-edge bg-raised focused:border-mint focused:bg-[#20313a]'}`}>
-        <Text className={`font-inter text-[16px] ${disabled ? 'text-[#596174]' : 'text-white'}`}>Copy {arrow}</Text>
+        <Text className={`font-inter text-[16px] ${disabled ? 'text-[#596174]' : 'text-white'}`}>Copy{selectionCount > 1 ? ` ${selectionCount}` : ''} {arrow}</Text>
       </View>
       <View focusable={!disabled} onPress={() => !disabled && onTransfer('move')}
         className={`w-[108px] h-[54px] rounded-xl border-[2px] items-center justify-center ${disabled ? 'border-edge bg-[#11141b]' : 'border-edge bg-raised focused:border-violet focused:bg-[#29223b]'}`}>
-        <Text className={`font-inter text-[16px] ${disabled ? 'text-[#596174]' : 'text-white'}`}>Move {arrow}</Text>
+        <Text className={`font-inter text-[16px] ${disabled ? 'text-[#596174]' : 'text-white'}`}>Move{selectionCount > 1 ? ` ${selectionCount}` : ''} {arrow}</Text>
       </View>
-      <Text className={`${MUTED} text-[12px] text-center`}>Select a game, then choose an action</Text>
+      <Text className={`${MUTED} text-[12px] text-center`}>{selectionCount > 1 ? 'Selected games run sequentially' : 'Square selects more games'}</Text>
     </View>
   );
 }
@@ -346,26 +349,31 @@ function DrivePicker({side, drives, current, other, onPick, onClose}) {
   );
 }
 
-function ConfirmTransfer({mode, game, source, target, onConfirm, onQueue, onClose}) {
-  const destination = destinationPath(target, game.sourceName);
+function ConfirmTransfer({mode, game, games, source, target, onConfirm, onQueue, onClose}) {
+  const items = games?.length ? games : [game];
+  const primary = items[0];
+  const batch = items.length > 1;
+  const destination = destinationPath(target, primary.sourceName);
+  const knownSize = items.reduce((sum, item) => sum + Number(item.size || 0), 0);
   return (
     <Modal onBack={onClose}>
       <View className="w-[760px] rounded-3xl border-[2px] border-edge bg-panel p-8 gap-6">
         <View className="flex-row items-center gap-4">
           <View className={`w-[54px] h-[54px] rounded-2xl items-center justify-center ${mode === 'move' ? 'bg-[#302647]' : 'bg-[#183431]'}`}>
-            <Text className={`font-inter text-[26px] ${mode === 'move' ? 'text-violet' : 'text-mint'}`}>{mode === 'move' ? '⇄' : '⎘'}</Text>
+            <Text className={`font-inter text-[26px] ${mode === 'move' ? 'text-violet' : 'text-mint'}`}>{mode === 'move' ? '↔' : '+'}</Text>
           </View>
           <View className="gap-1 flex-1">
-            <Text className="font-semi text-white text-[29px]">{mode === 'move' ? 'Move game' : 'Copy game'}</Text>
-            <Text className={`${MUTED} text-[16px]`} numberOfLines={1}>{game.name}</Text>
+            <Text className="font-semi text-white text-[29px]">{mode === 'move' ? 'Move' : 'Copy'} {batch ? `${items.length} games` : 'game'}</Text>
+            <Text className={`${MUTED} text-[16px]`} numberOfLines={1}>{batch ? `${source.label} → ${target.label} • ${knownSize ? formatBytes(knownSize) : 'size calculated during transfer'}` : primary.name}</Text>
           </View>
         </View>
         <View className="rounded-2xl bg-[#0c1019] border-[1px] border-edge p-5 gap-3">
           <View className="flex-row justify-between"><Text className={`${MUTED} text-[14px]`}>FROM</Text><Text className={`${TEXT} text-[15px]`}>{source.label}</Text></View>
-          <Text className={`${MUTED} text-[13px]`} numberOfLines={1}>{game.path}</Text>
+          {batch ? items.slice(0, 4).map(item => <Text key={item.key} className={`${MUTED} text-[13px]`} numberOfLines={1}>{item.name}</Text>) : <Text className={`${MUTED} text-[13px]`} numberOfLines={1}>{primary.path}</Text>}
+          {items.length > 4 && <Text className="font-inter text-[13px] text-violet">+ {items.length - 4} more</Text>}
           <View className="h-[1px] bg-edge" />
           <View className="flex-row justify-between"><Text className={`${MUTED} text-[14px]`}>TO</Text><Text className={`${TEXT} text-[15px]`}>{target.label}</Text></View>
-          <Text className={`${MUTED} text-[13px]`} numberOfLines={1}>{destination}</Text>
+          <Text className={`${MUTED} text-[13px]`} numberOfLines={1}>{batch ? `${target.root}/homebrew` : destination}</Text>
         </View>
         <Text className={`${MUTED} text-[15px]`}>
           {mode === 'move'
@@ -374,9 +382,9 @@ function ConfirmTransfer({mode, game, source, target, onConfirm, onQueue, onClos
         </Text>
         <View className="flex-row justify-end gap-3">
           <View focusable onPress={onClose} className={BUTTON}><Text className={`${TEXT} text-[16px]`}>Cancel</Text></View>
-          <View focusable onPress={onQueue} className={`${BUTTON} focused:border-violet`}><Text className="font-inter text-[16px] text-violet">Add to queue</Text></View>
+          <View focusable onPress={onQueue} className={`${BUTTON} focused:border-violet`}><Text className="font-inter text-[16px] text-violet">Add{batch ? ` ${items.length}` : ''} to queue</Text></View>
           <View focusable autoFocus onPress={onConfirm} className={`${BUTTON} border-mint bg-[#183431]`}>
-            <Text className="font-inter text-[16px] text-mint">Start {mode}</Text>
+            <Text className="font-inter text-[16px] text-mint">Start {batch ? 'batch' : mode}</Text>
           </View>
         </View>
       </View>
@@ -553,6 +561,7 @@ function App() {
   const [rightDrive, setRightDrive] = useState(null);
   const [libraries, setLibraries] = useState({left: [], right: []});
   const [selected, setSelected] = useState({left: null, right: null});
+  const [marked, setMarked] = useState({left: [], right: []});
   const [activeSide, setActiveSide] = useState('left');
   const [picker, setPicker] = useState(null);
   const [confirm, setConfirm] = useState(null);
@@ -575,6 +584,7 @@ function App() {
     const current = drive || (side === 'left' ? leftDrive : rightDrive);
     const publish = games => {
       setLibraries(previous => ({...previous, [side]: games}));
+      setMarked(previous => ({...previous, [side]: previous[side].filter(key => games.some(game => game.key === key))}));
       setSelected(previous => {
         const currentSelection = previous[side];
         const next = games.find(game => game.key === currentSelection?.key) || games[0] || null;
@@ -618,6 +628,7 @@ function App() {
     const games = enrichGames(scanDrive(drive), catalogRef.current, SHADOWMOUNT_API, cacheTokenRef.current);
     setLibraries(previous => ({...previous, [side]: games}));
     setSelected(previous => ({...previous, [side]: games[0] || null}));
+    setMarked(previous => ({...previous, [side]: []}));
     setActiveSide(side);
     setPicker(null);
   };
@@ -630,25 +641,36 @@ function App() {
   const sourceDrive = activeSide === 'left' ? leftDrive : rightDrive;
   const targetDrive = activeSide === 'left' ? rightDrive : leftDrive;
   const chosenGame = selected[activeSide];
+  const chosenGames = activeSelection(libraries[activeSide], marked[activeSide], chosenGame);
 
   const requestTransfer = mode => {
-    if (!chosenGame || !sourceDrive || !targetDrive) return;
-    const destination = destinationPath(targetDrive, chosenGame.sourceName);
-    if (FileSystem.exists(destination)) {
-      setJob({status: 'error', mode, game: chosenGame, snapshot: {state: 'copying', written: 0, verified: 0, total: chosenGame.size}, startedAt: Date.now(), error: `Destination already exists: ${destination}`});
-      return;
-    }
-    if (chosenGame.size) {
-      let free = Number(targetDrive.free || 0);
-      try { free = Number(FileSystem.diskUsage(targetDrive.root).free || free); } catch (err) { /* worker performs the final check */ }
-      const reserve = 64 * 1024 * 1024;
-      if (free && chosenGame.size + reserve > free) {
-        const missing = chosenGame.size + reserve - free;
-        setJob({status: 'error', mode, game: chosenGame, snapshot: {state: 'copying', written: 0, verified: 0, total: chosenGame.size}, startedAt: Date.now(), error: `Not enough free space on ${targetDrive.label}. Free at least ${formatBytes(missing)} more and try again.`});
+    if (!chosenGames.length || !sourceDrive || !targetDrive) return;
+    const destinations = new Set();
+    for (const game of chosenGames) {
+      const destination = destinationPath(targetDrive, game.sourceName);
+      if (destinations.has(destination)) {
+        setJob({status: 'error', mode, game, snapshot: {state: 'copying', written: 0, verified: 0, total: game.size}, startedAt: Date.now(), error: `Multiple selected games would use the same destination: ${destination}`});
+        return;
+      }
+      destinations.add(destination);
+      if (FileSystem.exists(destination)) {
+        setJob({status: 'error', mode, game, snapshot: {state: 'copying', written: 0, verified: 0, total: game.size}, startedAt: Date.now(), error: `Destination already exists: ${destination}`});
         return;
       }
     }
-    setConfirm({mode, game: chosenGame, source: sourceDrive, target: targetDrive, sourceSide: activeSide});
+    const knownSize = chosenGames.reduce((sum, game) => sum + Number(game.size || 0), 0);
+    if (knownSize) {
+      let free = Number(targetDrive.free || 0);
+      try { free = Number(FileSystem.diskUsage(targetDrive.root).free || free); } catch (err) { /* worker performs the final check */ }
+      const needed = knownSize + chosenGames.length * 64 * 1024 * 1024;
+      if (free && needed > free) {
+        const missing = needed - free;
+        const first = chosenGames[0];
+        setJob({status: 'error', mode, game: first, snapshot: {state: 'copying', written: 0, verified: 0, total: knownSize}, startedAt: Date.now(), error: `Not enough free space on ${targetDrive.label}. Free at least ${formatBytes(missing)} more and try again.`});
+        return;
+      }
+    }
+    setConfirm({mode, game: chosenGames[0], games: chosenGames, source: sourceDrive, target: targetDrive, sourceSide: activeSide});
   };
 
   const executeTransfer = async request => {
@@ -696,17 +718,36 @@ function App() {
   };
 
   const startTransfer = async () => {
-    const request = confirm;
+    const batch = confirm;
+    const games = batch.games?.length ? batch.games : [batch.game];
+    const completed = [];
     setConfirm(null);
-    await executeTransfer(request);
+    for (const game of games) {
+      const ok = await executeTransfer({...batch, game, games: undefined,
+        destination: destinationPath(batch.target, game.sourceName)});
+      if (!ok) break;
+      completed.push(game.key);
+    }
+    if (completed.length) {
+      setMarked(previous => ({...previous, [batch.sourceSide]: previous[batch.sourceSide].filter(key => !completed.includes(key))}));
+    }
+    if (games.length > 1 && completed.length === games.length) {
+      try { Notifications.show('DriveHop batch complete', `${completed.length} verified transfers`); } catch (err) { /* optional */ }
+    }
   };
 
   const addToQueue = () => {
-    const request = {...confirm, id: `${Date.now()}-${confirm.game.titleId || confirm.game.sourceName}`,
-      destination: destinationPath(confirm.target, confirm.game.sourceName)};
-    setQueue(previous => previous.some(item => transferKey(item) === transferKey(request)) ? previous : [...previous, request]);
+    const batch = confirm;
+    const games = batch.games?.length ? batch.games : [batch.game];
+    const createdAt = Date.now();
+    const requests = games.map((game, index) => ({...batch, game, games: undefined,
+      id: `${createdAt}-${index}-${game.titleId || game.sourceName}`,
+      destination: destinationPath(batch.target, game.sourceName)}));
+    setQueue(previous => requests.reduce((items, request) =>
+      items.some(item => transferKey(item) === transferKey(request)) ? items : [...items, request], previous));
+    setMarked(previous => ({...previous, [batch.sourceSide]: previous[batch.sourceSide].filter(key => !games.some(game => game.key === key))}));
     setConfirm(null);
-    try { Notifications.show('Added to DriveHop queue', confirm.game.name); } catch (err) { /* optional */ }
+    try { Notifications.show('Added to DriveHop queue', games.length === 1 ? games[0].name : `${games.length} games`); } catch (err) { /* optional */ }
   };
 
   const runQueue = async () => {
@@ -794,6 +835,10 @@ function App() {
         right: enrichGames(scanDrive(rightDrive), catalog, SHADOWMOUNT_API, cacheTokenRef.current),
       };
       setLibraries(nextLibraries);
+      setMarked(previous => ({
+        left: previous.left.filter(key => nextLibraries.left.some(game => game.key === key)),
+        right: previous.right.filter(key => nextLibraries.right.some(game => game.key === key)),
+      }));
       setSelected(previous => ({
         left: nextLibraries.left.find(game => game.key === previous.left?.key) || nextLibraries.left[0] || null,
         right: nextLibraries.right.find(game => game.key === previous.right?.key) || nextLibraries.right[0] || null,
@@ -821,6 +866,19 @@ function App() {
   const selectedCount = useMemo(() => libraries.left.length + libraries.right.length, [libraries]);
   const duplicateIds = useMemo(() => duplicateTitleIds(libraries.left, libraries.right), [libraries]);
   const cacheDisabled = job?.status === 'running' || speedTest?.status === 'running';
+  const markedCount = marked.left.length + marked.right.length;
+  const handleAction = action => {
+    if (action !== 'square') return false;
+    if (picker || confirm || queueOpen || recoveryOpen || cacheModal || speedTest || job) return false;
+    const game = selected[activeSide];
+    if (!game) return true;
+    setMarked(previous => {
+      const keys = previous[activeSide];
+      return {...previous, [activeSide]: keys.includes(game.key) ? keys.filter(key => key !== game.key) : [...keys, game.key]};
+    });
+    try { Controller.vibrate(0.3, 35); } catch (err) { /* optional */ }
+    return true;
+  };
 
   if (phase === 'loading') {
     return (
@@ -833,7 +891,7 @@ function App() {
   }
 
   return (
-    <FocusScope wrap onBack={closeTop}>
+    <FocusScope wrap onBack={closeTop} onAction={handleAction}>
       <View className="w-screen h-screen bg-night">
         <View className="h-[86px] px-10 flex-row items-center justify-between border-b-[1px] border-edge">
           <View className="flex-row items-center gap-4">
@@ -852,20 +910,20 @@ function App() {
             <View focusable onPress={() => { setPartials(scanPartials(drives)); setRecoveryOpen(true); }} className="h-[38px] px-4 rounded-xl border-[2px] border-edge bg-raised items-center justify-center focused:border-mint">
               <Text className="font-inter text-[14px] text-mint">Recovery {partials.length}</Text>
             </View>
-            <Text className={`${MUTED} text-[13px]`}>{drives.length} drives • {selectedCount} games</Text>
+            <Text className={`${markedCount ? 'font-semi text-violet' : MUTED} text-[13px]`}>{markedCount ? `${markedCount} selected` : `${drives.length} drives • ${selectedCount} games`}</Text>
           </View>
         </View>
 
         <View className="flex-1 px-10 py-5 flex-row justify-center">
           <DrivePane side="left" drive={leftDrive} games={libraries.left} selected={selected.left} active={activeSide === 'left'}
-            duplicateIds={duplicateIds} onChooseDrive={setPicker} onSelect={selectGame} onRefresh={side => refresh(side)} onSpeedTest={runSpeedTest} />
-          <Shuttle activeSide={activeSide} selection={chosenGame && targetDrive} onTransfer={requestTransfer} />
+            markedKeys={marked.left} duplicateIds={duplicateIds} onChooseDrive={setPicker} onSelect={selectGame} onRefresh={side => refresh(side)} onSpeedTest={runSpeedTest} />
+          <Shuttle activeSide={activeSide} selectionCount={targetDrive ? chosenGames.length : 0} onTransfer={requestTransfer} />
           <DrivePane side="right" drive={rightDrive} games={libraries.right} selected={selected.right} active={activeSide === 'right'}
-            duplicateIds={duplicateIds} onChooseDrive={setPicker} onSelect={selectGame} onRefresh={side => refresh(side)} onSpeedTest={runSpeedTest} />
+            markedKeys={marked.right} duplicateIds={duplicateIds} onChooseDrive={setPicker} onSelect={selectGame} onRefresh={side => refresh(side)} onSpeedTest={runSpeedTest} />
         </View>
 
         <View className="h-[54px] px-10 border-t-[1px] border-edge flex-row items-center justify-between">
-          <Text className={`${MUTED} text-[13px]`}>D-pad  Navigate    ✕  Select    ○  Exit</Text>
+          <Text className={`${MUTED} text-[13px]`}>D-pad  Navigate    Square  Multi-select    Cross  Activate    Circle  Exit</Text>
           <Text className={`${MUTED} text-[13px]`}>{duplicateIds.size ? `${duplicateIds.size} duplicate title${duplicateIds.size === 1 ? '' : 's'} • ` : ''}Folder • FFPKG • exFAT • FFPFS • FFPFSC</Text>
         </View>
 

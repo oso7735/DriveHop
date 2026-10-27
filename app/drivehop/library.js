@@ -170,6 +170,12 @@ export function queueSpaceNeeds(items, reservePerItem = 64 * 1024 * 1024) {
   return totals;
 }
 
+export function activeSelection(games, markedKeys, fallback) {
+  const keys = new Set(markedKeys || []);
+  const marked = (games || []).filter(game => keys.has(game.key));
+  return marked.length ? marked : fallback ? [fallback] : [];
+}
+
 export function transferKey(item) {
   if (!item || !item.game || !item.target) return '';
   return `${item.mode}:${item.game.path}:${item.target.root}:${item.game.sourceName}`;

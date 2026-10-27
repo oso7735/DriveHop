@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  absoluteHttpUrl, basename, cacheBustedUrl, destinationPath, displayNameFromFile, extension, formatBytes, formatForName,
+  absoluteHttpUrl, activeSelection, basename, cacheBustedUrl, destinationPath, displayNameFromFile, extension, formatBytes, formatForName,
   duplicateTitleIds, enrichGames, isAllowedImage, isPartial, joinPath, libraryPaths, percentOf,
   queueSpaceNeeds, sameIdentity, titleIdFrom, transferKey, updateManualListText,
 } from '../app/drivehop/library.js';
@@ -70,4 +70,11 @@ test('duplicate detection and queue preflight use title and destination roots', 
   const item = {mode: 'copy', game: {path: '/a/game.exfat', sourceName: 'game.exfat', size: 100}, target: {root: '/data'}};
   assert.deepEqual(queueSpaceNeeds([item], 20), {'/data': 120});
   assert.equal(transferKey(item), 'copy:/a/game.exfat:/data:game.exfat');
+});
+
+test('multi-select prefers marked games and falls back to the highlighted game', () => {
+  const games = [{key: 'a'}, {key: 'b'}, {key: 'c'}];
+  assert.deepEqual(activeSelection(games, ['c', 'a'], games[1]), [games[0], games[2]]);
+  assert.deepEqual(activeSelection(games, [], games[1]), [games[1]]);
+  assert.deepEqual(activeSelection(games, ['missing'], null), []);
 });
