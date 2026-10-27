@@ -17,6 +17,10 @@ This project is independent homebrew and is not affiliated with Sony.
   (for removable drives) top-level directory.
 - Vertical navigation stays inside its current pane; Left/Right explicitly
   switches panes.
+- A guarded **Clear Cache** action invalidates DriveHop artwork/metadata,
+  removes its disposable speed-test file, resets ShadowMountPlus scan attempts,
+  and requests a full library rescan. It never deletes games, saves, `app.db`,
+  or `/user/appmeta`.
 - Extracted game folders plus `.ffpkg`, `.exfat`, `.ffpfs` and `.ffpfsc` images.
 - Real game names and tile artwork from ShadowMountPlus's local game catalog;
   installed app metadata and filename-based labels remain as offline fallbacks.
@@ -69,7 +73,7 @@ PATH="$PWD/.venv/bin:$PATH" npm run build -- --app-dir ../DriveHop/app/drivehop
 
 The result is written under PS5 React's `dist/PPSA99777` directory. From Windows,
 use the included GitHub Actions workflow: GitHub's `macos-15` runner is an M1
-Mac and produces a checksummed `DriveHop-PPSA99777-v0.3.4` artifact. See
+Mac and produces a checksummed `DriveHop-PPSA99777-v0.3.5` artifact. See
 [`docs/BUILD-ON-GITHUB.md`](docs/BUILD-ON-GITHUB.md).
 
 Run the platform-neutral model tests anywhere Node.js is available:
@@ -95,6 +99,11 @@ Windows ZIP tools.
 DriveHop requires broad filesystem access because its purpose is moving data
 between console-wide storage roots. Install only a build whose source and hash
 you trust.
+
+The **Clear Cache** button is intentionally limited to DriveHop and
+ShadowMountPlus. The PS5 system-software cache is a separate maintenance action
+that Sony exposes only from Safe Mode; DriveHop does not imitate it by deleting
+undocumented system files.
 
 ## Compatibility and limitations
 

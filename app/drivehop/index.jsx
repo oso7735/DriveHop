@@ -120,6 +120,17 @@ async function loadShadowMountCatalog() {
   }
 }
 
+async function requestShadowMountRescan() {
+  const response = await Http.request(`${SHADOWMOUNT_API}/api/v1/scan`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({reset_attempts: true}), maxBytes: 128 * 1024,
+  });
+  if (!response.ok) throw new Error(`ShadowMountPlus returned HTTP ${response.status}`);
+  const data = await response.json();
+  if (Number(data.status || 0) !== 0) throw new Error(data.error || `ShadowMountPlus status ${data.status}`);
+  return data;
+}
+
 function scanPartials(drives) {
   const found = [];
   for (const drive of drives || []) {
@@ -445,7 +456,7 @@ function QueueModal({queue, onStart, onClear, onClose}) {
 function SpeedModal({test, onClose}) {
   const running = test.status === 'running';
   return (
-    <Modal onBack={() => !running && onClose()}>
+    <Modal onBack={() => { if (!running) onClose(); return true; }}>
       <View className="w-[650px] rounded-3xl border-[2px] border-edge bg-panel p-8 gap-6">
         <Text className="font-semi text-white text-[30px]">Drive speed test</Text>
         <Text className={`${MUTED} text-[16px]`}>{test.drive.label} • verified 4 MB write/read sample</Text>
@@ -456,6 +467,39 @@ function SpeedModal({test, onClose}) {
           <Text className={`${MUTED} text-[14px]`}>{test.error || (running ? 'Do not disconnect the drive' : 'Includes write plus byte verification')}</Text>
         </View>
         {!running && <View focusable autoFocus onPress={onClose} className={`${BUTTON} self-end`}><Text className={`${TEXT} text-[16px]`}>Done</Text></View>}
+      </View>
+    </Modal>
+  );
+}
+
+function CacheModal({state, onClear, onClose}) {
+  const running = state.status === 'running';
+  const finished = state.status === 'done' || state.status === 'error';
+  return (
+    <Modal onBack={() => !running && onClose()}>
+      <View className="w-[760px] rounded-3xl border-[2px] border-edge bg-panel p-8 gap-6">
+        <View className="gap-2">
+          <Text className="font-semi text-white text-[30px]">
+            {running ? 'Clearing app cache…' : state.status === 'done' ? 'Cache refreshed' : state.status === 'error' ? 'Cache needs attention' : 'Clear cache and rescan?'}
+          </Text>
+          <Text className={`${MUTED} text-[16px]`}>
+            {running ? 'DriveHop is invalidating artwork and asking ShadowMountPlus for a full scan.' : state.message || 'This refreshes DriveHop and ShadowMountPlus without deleting games or saves.'}
+          </Text>
+        </View>
+        {state.status === 'confirm' && <View className="rounded-2xl bg-[#0c1019] border-[1px] border-edge p-5 gap-3">
+          <Text className="font-inter text-[15px] text-mint">SAFE APP CACHE</Text>
+          <Text className={`${MUTED} text-[14px]`}>Clears DriveHop's disposable data, reloads game names and artwork, resets failed scan attempts, and queues a full ShadowMountPlus rescan.</Text>
+          <View className="h-[1px] bg-edge" />
+          <Text className="font-inter text-[15px] text-violet">PS5 SYSTEM CACHE</Text>
+          <Text className={`${MUTED} text-[14px]`}>Sony's system-software cache can only be cleared from PS5 Safe Mode. DriveHop will not modify system databases or app metadata folders.</Text>
+        </View>}
+        {running && <View className="h-[10px] rounded-full bg-edge overflow-hidden"><View className="w-full h-[10px] rounded-full bg-mint" /></View>}
+        {state.status === 'error' && <View className="rounded-xl bg-[#351b26] border-[1px] border-danger p-4"><Text className="font-inter text-[15px] text-[#fecdd3]">{state.error}</Text></View>}
+        <View className="flex-row justify-end gap-3">
+          {state.status === 'confirm' && <View focusable onPress={onClose} className={BUTTON}><Text className={`${TEXT} text-[16px]`}>Cancel</Text></View>}
+          {state.status === 'confirm' && <View focusable autoFocus onPress={onClear} className={`${BUTTON} border-mint bg-[#183431]`}><Text className="font-inter text-[16px] text-mint">Clear and rescan</Text></View>}
+          {finished && <View focusable autoFocus onPress={onClose} className={`${BUTTON} border-mint`}><Text className={`${TEXT} text-[16px]`}>Done</Text></View>}
+        </View>
       </View>
     </Modal>
   );
@@ -517,10 +561,12 @@ function App() {
   const [interrupted, setInterrupted] = useState(savedState.interrupted);
   const [queueOpen, setQueueOpen] = useState(false);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const [cacheModal, setCacheModal] = useState(null);
   const [partials, setPartials] = useState([]);
   const [speedTest, setSpeedTest] = useState(null);
   const taskRef = useRef(null);
   const catalogRef = useRef([]);
+  const cacheTokenRef = useRef('');
   useHaptics();
 
   useEffect(() => { savePersistentState(queue, interrupted); }, [queue, interrupted]);
@@ -536,11 +582,11 @@ function App() {
       });
     };
     const scanned = scanDrive(current);
-    publish(enrichGames(scanned, catalogRef.current, SHADOWMOUNT_API));
+    publish(enrichGames(scanned, catalogRef.current, SHADOWMOUNT_API, cacheTokenRef.current));
     const catalog = await loadShadowMountCatalog();
     if (catalog.length) {
       catalogRef.current = catalog;
-      publish(enrichGames(scanned, catalog, SHADOWMOUNT_API));
+      publish(enrichGames(scanned, catalog, SHADOWMOUNT_API, cacheTokenRef.current));
     }
   }, [leftDrive, rightDrive]);
 
@@ -555,8 +601,8 @@ function App() {
       setRightDrive(external);
       catalogRef.current = catalog;
       setLibraries({
-        left: enrichGames(scanDrive(internal), catalog, SHADOWMOUNT_API),
-        right: enrichGames(scanDrive(external), catalog, SHADOWMOUNT_API),
+        left: enrichGames(scanDrive(internal), catalog, SHADOWMOUNT_API, cacheTokenRef.current),
+        right: enrichGames(scanDrive(external), catalog, SHADOWMOUNT_API, cacheTokenRef.current),
       });
       setPartials(scanPartials(found));
       setPhase('ready');
@@ -569,7 +615,7 @@ function App() {
 
   const chooseDrive = (side, drive) => {
     if (side === 'left') setLeftDrive(drive); else setRightDrive(drive);
-    const games = enrichGames(scanDrive(drive), catalogRef.current, SHADOWMOUNT_API);
+    const games = enrichGames(scanDrive(drive), catalogRef.current, SHADOWMOUNT_API, cacheTokenRef.current);
     setLibraries(previous => ({...previous, [side]: games}));
     setSelected(previous => ({...previous, [side]: games[0] || null}));
     setActiveSide(side);
@@ -734,11 +780,38 @@ function App() {
     executeTransfer(request);
   };
 
+  const clearAppCache = async () => {
+    setCacheModal({status: 'running', message: ''});
+    try {
+      cacheTokenRef.current = String(Date.now());
+      catalogRef.current = [];
+      if (FileSystem.exists(SPEED_SOURCE)) await FileSystem.removeAsync(SPEED_SOURCE);
+      await requestShadowMountRescan();
+      const catalog = await loadShadowMountCatalog();
+      catalogRef.current = catalog;
+      const nextLibraries = {
+        left: enrichGames(scanDrive(leftDrive), catalog, SHADOWMOUNT_API, cacheTokenRef.current),
+        right: enrichGames(scanDrive(rightDrive), catalog, SHADOWMOUNT_API, cacheTokenRef.current),
+      };
+      setLibraries(nextLibraries);
+      setSelected(previous => ({
+        left: nextLibraries.left.find(game => game.key === previous.left?.key) || nextLibraries.left[0] || null,
+        right: nextLibraries.right.find(game => game.key === previous.right?.key) || nextLibraries.right[0] || null,
+      }));
+      setPartials(scanPartials(drives));
+      setCacheModal({status: 'done', message: 'DriveHop artwork and metadata were reloaded. ShadowMountPlus accepted a full rescan with retry counters reset.'});
+      try { Notifications.show('DriveHop cache refreshed', 'ShadowMountPlus full rescan requested'); } catch (err) { /* optional */ }
+    } catch (err) {
+      setCacheModal({status: 'error', message: 'DriveHop invalidated its local cache, but ShadowMountPlus could not complete the rescan request.', error: err.message || String(err)});
+    }
+  };
+
   const closeTop = () => {
     if (picker) { setPicker(null); return true; }
     if (confirm) { setConfirm(null); return true; }
     if (queueOpen) { setQueueOpen(false); return true; }
     if (recoveryOpen) { setRecoveryOpen(false); return true; }
+    if (cacheModal) { if (cacheModal.status !== 'running') setCacheModal(null); return true; }
     if (speedTest && speedTest.status !== 'running') { setSpeedTest(null); return true; }
     if (job && job.status !== 'running') { setJob(null); return true; }
     if (!job && !speedTest) { BackHandler.exitApp(); return true; }
@@ -747,6 +820,7 @@ function App() {
 
   const selectedCount = useMemo(() => libraries.left.length + libraries.right.length, [libraries]);
   const duplicateIds = useMemo(() => duplicateTitleIds(libraries.left, libraries.right), [libraries]);
+  const cacheDisabled = job?.status === 'running' || speedTest?.status === 'running';
 
   if (phase === 'loading') {
     return (
@@ -768,6 +842,10 @@ function App() {
           </View>
           <View className="flex-row items-center gap-3">
             <View className="px-4 h-[36px] rounded-full bg-[#142623] items-center justify-center"><Text className="font-inter text-[13px] text-mint">BYTE-VERIFIED</Text></View>
+            <View focusable={!cacheDisabled} onPress={() => !cacheDisabled && setCacheModal({status: 'confirm', message: ''})}
+              className={`h-[38px] px-4 rounded-xl border-[2px] items-center justify-center ${cacheDisabled ? 'border-edge bg-[#11141b]' : 'border-edge bg-raised focused:border-mint'}`}>
+              <Text className={`font-inter text-[14px] ${cacheDisabled ? 'text-[#596174]' : 'text-mint'}`}>Clear Cache</Text>
+            </View>
             <View focusable onPress={() => setQueueOpen(true)} className="h-[38px] px-4 rounded-xl border-[2px] border-edge bg-raised items-center justify-center focused:border-violet">
               <Text className="font-inter text-[14px] text-violet">Queue {queue.length}</Text>
             </View>
@@ -796,6 +874,7 @@ function App() {
         {!!confirm && <ConfirmTransfer {...confirm} onConfirm={startTransfer} onQueue={addToQueue} onClose={() => setConfirm(null)} />}
         {queueOpen && <QueueModal queue={queue} onStart={runQueue} onClear={() => setQueue([])} onClose={() => setQueueOpen(false)} />}
         {recoveryOpen && <RecoveryModal partials={partials} interrupted={interrupted} onResume={resumeInterrupted} onDelete={removePartial} onClose={() => setRecoveryOpen(false)} />}
+        {!!cacheModal && <CacheModal state={cacheModal} onClear={clearAppCache} onClose={() => setCacheModal(null)} />}
         {!!speedTest && <SpeedModal test={speedTest} onClose={() => setSpeedTest(null)} />}
         {!!job && <TransferProgress job={job} onCancel={() => taskRef.current && taskRef.current.cancel()} onClose={() => setJob(null)} />}
       </View>

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  absoluteHttpUrl, basename, destinationPath, displayNameFromFile, extension, formatBytes, formatForName,
+  absoluteHttpUrl, basename, cacheBustedUrl, destinationPath, displayNameFromFile, extension, formatBytes, formatForName,
   duplicateTitleIds, enrichGames, isAllowedImage, isPartial, joinPath, libraryPaths, percentOf,
   queueSpaceNeeds, sameIdentity, titleIdFrom, transferKey, updateManualListText,
 } from '../app/drivehop/library.js';
@@ -14,6 +14,10 @@ test('enriches filename-only games with ShadowMount names and artwork', () => {
     iconUrl: 'http://127.0.0.1:10101/api/v1/games/icon?title_id=PPSA01474&size=thumb',
   });
   assert.equal(absoluteHttpUrl('https://covers.example/game.png', 'http://127.0.0.1:10101'), 'https://covers.example/game.png');
+  assert.equal(cacheBustedUrl('http://127.0.0.1/icon.png?size=thumb', 42),
+    'http://127.0.0.1/icon.png?size=thumb&drivehop_cache=42');
+  assert.match(enrichGames(games, catalog, 'http://127.0.0.1:10101', 'new art')[0].iconUrl,
+    /drivehop_cache=new%20art$/);
 });
 
 test('metadata can identify an image whose filename has no title id', () => {

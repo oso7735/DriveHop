@@ -54,7 +54,13 @@ export function absoluteHttpUrl(value, baseUrl) {
   return `${base}/${url.replace(/^\/+/, '')}`;
 }
 
-export function enrichGames(games, catalog, baseUrl = 'http://127.0.0.1:10101') {
+export function cacheBustedUrl(value, token) {
+  const url = String(value || '');
+  if (!url || token === undefined || token === null || token === '') return url;
+  return `${url}${url.includes('?') ? '&' : '?'}drivehop_cache=${encodeURIComponent(String(token))}`;
+}
+
+export function enrichGames(games, catalog, baseUrl = 'http://127.0.0.1:10101', cacheToken = '') {
   const byTitleId = new Map();
   const byPath = new Map();
   for (const item of catalog || []) {
@@ -74,7 +80,7 @@ export function enrichGames(games, catalog, baseUrl = 'http://127.0.0.1:10101') 
       ...game,
       titleId: resolvedId || titleId,
       name: resolvedName && resolvedName.toUpperCase() !== resolvedId ? resolvedName : game.name,
-      iconUrl: absoluteHttpUrl(metadata.icon_url || metadata.iconUrl, baseUrl),
+      iconUrl: cacheBustedUrl(absoluteHttpUrl(metadata.icon_url || metadata.iconUrl, baseUrl), cacheToken),
     };
   }).sort((a, b) => a.name.localeCompare(b.name));
 }
