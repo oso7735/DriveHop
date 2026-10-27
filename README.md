@@ -85,7 +85,7 @@ PATH="$PWD/.venv/bin:$PATH" npm run build -- --app-dir ../DriveHop/app/drivehop
 ```
 
 The result is written under PS5 React's `dist/PPSA99777` directory. From Windows,
-use the included GitHub Actions workflow: GitHub's `macos-15` runner is an M1
+use the included GitHub Actions workflow: GitHub's `macos-14` runner is an M1
 Mac and produces a checksummed `DriveHop-PPSA99777-v0.6.0` artifact. See
 [`docs/BUILD-ON-GITHUB.md`](docs/BUILD-ON-GITHUB.md).
 

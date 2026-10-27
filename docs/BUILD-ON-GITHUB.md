@@ -13,7 +13,7 @@ repositories.
 3. Open the repository's **Actions** tab and allow workflows if GitHub asks.
 4. Select **Build DriveHop**, choose **Run workflow**, and run it from `main`.
 
-The workflow confirms `uname -m` is `arm64`, installs the pinned build
+The workflow uses GitHub's `macos-14` M1 pool, confirms `uname -m` is `arm64`, installs the pinned build
 dependencies, builds with the current PS5 React project, and creates a checksummed
 artifact named `DriveHop-PPSA99777-v0.6.0`.
 

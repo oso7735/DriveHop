@@ -31,7 +31,7 @@ jobs:
         run: cc -std=gnu11 -O2 -Wall -Wextra -Werror tests/installer_lz4_test.c -o /tmp/drivehop-installer-test && /tmp/drivehop-installer-test
 
   build:
-    runs-on: macos-15
+    runs-on: macos-14
     timeout-minutes: 90
     env:
       HOMEBREW_NO_AUTO_UPDATE: '1'
