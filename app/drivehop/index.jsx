@@ -53,7 +53,7 @@ function saveSmbConfig(config) {
 
 function writeSmbKey(key) {
   FileSystem.mkdir(SMB_STATE_DIR, {recursive: true});
-  FileSystem.writeFile(SMB_KEY_FILE, `${key}\ndrivehop-0.6.0\n`, {sync: true});
+  FileSystem.writeFile(SMB_KEY_FILE, `${key}\ndrivehop-0.6.1\n`, {sync: true});
   FileSystem.chmod(SMB_KEY_FILE, 0o600);
 }
 

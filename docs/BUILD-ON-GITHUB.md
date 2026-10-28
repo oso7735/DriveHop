@@ -14,13 +14,13 @@ DriveHop only needs the PS5 cross-build, so its workflow uses GitHub's standard
 
 The workflow confirms the Intel macOS host, installs the pinned build
 dependencies, builds with the current PS5 React project, and creates a checksummed
-artifact named `DriveHop-PPSA99777-v0.6.0`.
+artifact named `DriveHop-PPSA99777-v0.6.1`.
 
 ## Download and install
 
 1. Open the completed workflow run.
-2. Download `DriveHop-PPSA99777-v0.6.0` from **Artifacts** and extract it.
-3. Close DriveHop if it is running. Send `DriveHop-Installer-v0.6.0.elf` to the
+2. Download `DriveHop-PPSA99777-v0.6.1` from **Artifacts** and extract it.
+3. Close DriveHop if it is running. Send `DriveHop-Installer-v0.6.1.elf` to the
    PS5's ELF loader on port `9021` with Payload Manager or another sender.
 4. Wait for the completion notification. The installer embeds the full app,
    verifies it on the console, applies `0777` recursively and requests a
