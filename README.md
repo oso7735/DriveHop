@@ -71,8 +71,10 @@ above.
 
 ## Build
 
-PS5 React currently supports building on Apple-silicon macOS. Install its
-prerequisites, then build DriveHop from a checkout next to this repository:
+PS5 React documents Apple-silicon macOS as its supported development host.
+DriveHop's CI uses Intel macOS for the PS5-only cross-build (no desktop preview),
+which avoids depending on the scarce hosted M1 pool. For a local supported build,
+install the prerequisites and build from a checkout next to this repository:
 
 ```sh
 git clone https://github.com/JVK3R/ps5-react.git
@@ -85,8 +87,8 @@ PATH="$PWD/.venv/bin:$PATH" npm run build -- --app-dir ../DriveHop/app/drivehop
 ```
 
 The result is written under PS5 React's `dist/PPSA99777` directory. From Windows,
-use the included GitHub Actions workflow: GitHub's `macos-14` runner is an M1
-Mac and produces a checksummed `DriveHop-PPSA99777-v0.6.0` artifact. See
+use the included GitHub Actions workflow: GitHub's `macos-15-intel` runner
+produces a checksummed `DriveHop-PPSA99777-v0.6.0` artifact. See
 [`docs/BUILD-ON-GITHUB.md`](docs/BUILD-ON-GITHUB.md).
 
 Run the platform-neutral model tests anywhere Node.js is available:
