@@ -1131,7 +1131,7 @@ function App() {
         </View>
 
         <View className="h-[54px] px-10 border-t-[1px] border-edge flex-row items-center justify-between">
-          <Text className={`${MUTED} text-[13px]`}>D-pad  Navigate    Cross  Select    Circle  Exit</Text>
+          <Text className={`${MUTED} text-[13px]`}>D-pad  Navigate    Circle  Exit</Text>
           <Text className={`${MUTED} text-[13px]`}>{duplicateIds.size ? `${duplicateIds.size} duplicate title${duplicateIds.size === 1 ? '' : 's'} • ` : ''}Folder • FFPKG • exFAT • FFPFS • FFPFSC</Text>
         </View>
 
