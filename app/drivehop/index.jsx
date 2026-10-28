@@ -320,7 +320,7 @@ function DrivePane({side, drive, games, selected, markedKeys, active, duplicateI
           <View focusable onPress={() => onChooseDrive(side)} className="h-[42px] min-w-[230px] px-4 rounded-xl border-[2px] border-edge bg-raised flex-row items-center gap-3 focused:border-mint">
             <View className={`w-[9px] h-[9px] rounded-full ${drive ? 'bg-mint' : 'bg-danger'}`} />
             <Text className={`${TEXT} text-[18px]`}>{drive ? drive.label : 'Select a drive'}</Text>
-            <Text className={`${MUTED} text-[16px]`}>v</Text>
+            <Text className={`${MUTED} text-[16px]`}>▼</Text>
           </View>
           <View focusable onPress={() => onRefresh(side)} className="w-[42px] h-[42px] rounded-xl border-[2px] border-edge items-center justify-center focused:border-mint focused:bg-raised">
             <Text className="font-inter text-[20px] text-mint">↻</Text>
