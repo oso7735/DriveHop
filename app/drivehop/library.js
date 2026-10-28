@@ -1,6 +1,7 @@
 // DriveHop's storage model is kept UI-free so it can be tested on a computer.
 
 export const IMAGE_EXTENSIONS = Object.freeze(['.ffpkg', '.exfat', '.ffpfs', '.ffpfsc']);
+export const DRIVEHOP_TITLE_ID = 'PPSA99777';
 
 export const DRIVE_SPECS = Object.freeze([
   {id: 'internal', label: 'Internal SSD', root: '/data', kind: 'internal'},
@@ -34,6 +35,13 @@ export function formatForName(name) {
 export function titleIdFrom(text) {
   const match = String(text || '').match(/(?:^|[^A-Z0-9])((?:PPSA|CUSA)\d{5})(?=$|[^A-Z0-9])/i);
   return match ? match[1].toUpperCase() : '';
+}
+
+export function isDriveHopApp(game) {
+  if (!game) return false;
+  const titleId = String(game.titleId || titleIdFrom(game.sourceName || game.path)).toUpperCase();
+  const path = String(game.path || '').replace(/\/+$/, '').toUpperCase();
+  return titleId === DRIVEHOP_TITLE_ID || path === `/DATA/HOMEBREW/${DRIVEHOP_TITLE_ID}`;
 }
 
 export function displayNameFromFile(name) {

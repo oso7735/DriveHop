@@ -7,7 +7,7 @@ import {
 } from '@ps5-react/core';
 import {
   DRIVE_SPECS, activeSelection, basename, destinationPath, displayNameFromFile, etaText,
-  enrichGames, formatBytes, formatForName, isAllowedImage, isPartial, joinPath, libraryPaths,
+  enrichGames, formatBytes, formatForName, isAllowedImage, isDriveHopApp, isPartial, joinPath, libraryPaths,
   duplicateTitleIds, percentOf, queueSpaceNeeds, sameIdentity, speedText,
   titleIdFrom, transferKey, updateManualListText,
 } from './library.js';
@@ -93,7 +93,10 @@ function loadPersistentState() {
   try {
     if (!FileSystem.exists(STATE_FILE)) return {queue: [], interrupted: []};
     const state = JSON.parse(FileSystem.readFile(STATE_FILE));
-    return {queue: Array.isArray(state.queue) ? state.queue : [], interrupted: Array.isArray(state.interrupted) ? state.interrupted : []};
+    return {
+      queue: Array.isArray(state.queue) ? state.queue.filter(item => !isDriveHopApp(item.game)) : [],
+      interrupted: Array.isArray(state.interrupted) ? state.interrupted.filter(item => !isDriveHopApp(item.game)) : [],
+    };
   } catch (err) {
     return {queue: [], interrupted: []};
   }
@@ -152,21 +155,23 @@ function scanDrive(drive) {
       if (entry.isFile && isAllowedImage(entry.name)) {
         const filenameTitleId = titleIdFrom(entry.name);
         const appMetadata = appMetadataForTitle(filenameTitleId);
-        found.set(path, {
+        const game = {
           key: path, path, sourceName: entry.name,
           name: appMetadata.title || displayNameFromFile(entry.name),
           titleId: appMetadata.titleId || filenameTitleId, format: formatForName(entry.name),
           size: Number(entry.size || 0), kind: 'image', modified: entry.modified || 0,
           identity: {device: entry.device, inode: entry.inode},
-        });
+        };
+        if (!isDriveHopApp(game)) found.set(path, game);
       } else if (entry.isDirectory && isGameFolder(path)) {
         const param = safeReadParam(path);
-        found.set(path, {
+        const game = {
           key: path, path, sourceName: entry.name, name: param.title || displayNameFromFile(entry.name),
           titleId: param.titleId || titleIdFrom(entry.name), format: 'Folder', size: 0,
           kind: 'folder', modified: entry.modified || 0,
           identity: {device: entry.device, inode: entry.inode},
-        });
+        };
+        if (!isDriveHopApp(game)) found.set(path, game);
       }
     }
   }
@@ -871,6 +876,12 @@ function App() {
 
   const executeTransfer = async request => {
     const destination = request.destination || destinationPath(request.target, request.game.sourceName);
+    if (isDriveHopApp(request.game)) {
+      setJob({status: 'error', mode: request.mode, game: request.game,
+        snapshot: {state: 'copying', written: 0, verified: 0, total: request.game.size || 0}, startedAt: Date.now(), destination,
+        error: 'DriveHop cannot transfer or remove its own installed application.'});
+      return false;
+    }
     const recoveryRecord = {...request, destination, id: request.id || `${Date.now()}-${request.game.titleId || request.game.sourceName}`};
     setInterrupted(previous => [...previous.filter(item => item.destination !== destination), recoveryRecord]);
     try {

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   absoluteHttpUrl, activeSelection, basename, cacheBustedUrl, destinationPath, displayNameFromFile, extension, formatBytes, formatForName,
-  duplicateTitleIds, enrichGames, isAllowedImage, isPartial, joinPath, libraryPaths, percentOf,
+  duplicateTitleIds, enrichGames, isAllowedImage, isDriveHopApp, isPartial, joinPath, libraryPaths, percentOf,
   queueSpaceNeeds, sameIdentity, titleIdFrom, transferKey, updateManualListText,
 } from '../app/drivehop/library.js';
 
@@ -42,6 +42,12 @@ test('normalizes paths, title ids and display names', () => {
   assert.equal(basename('/data/homebrew/PPSA00001.exfat'), 'PPSA00001.exfat');
   assert.equal(titleIdFrom('Name PPSA20154 v1'), 'PPSA20154');
   assert.equal(displayNameFromFile('PPSA05144_Little.Nightmares3.ffpfsc'), 'PPSA05144 Little Nightmares3');
+});
+
+test('protects DriveHop from self-transfer', () => {
+  assert.equal(isDriveHopApp({titleId: 'PPSA99777', path: '/data/homebrew/PPSA99777'}), true);
+  assert.equal(isDriveHopApp({sourceName: 'PPSA99777', path: '/mnt/usb0/homebrew/PPSA99777'}), true);
+  assert.equal(isDriveHopApp({titleId: 'PPSA01474', path: '/data/homebrew/PPSA01474'}), false);
 });
 
 test('uses a safe conventional homebrew destination', () => {
