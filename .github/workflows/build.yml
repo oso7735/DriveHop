@@ -48,6 +48,14 @@ jobs:
           sw_vers
       - name: Install native prerequisites
         run: brew install cmake sdl2 llvm@18 curl libarchive openssl@3 zstd
+      - name: Configure Intel LLVM toolchain
+        run: |
+          llvm_bin="$(brew --prefix llvm@18)/bin"
+          test -x "$llvm_bin/clang"
+          test -x "$llvm_bin/llvm-config"
+          echo "DRIVEHOP_LLVM_BIN=$llvm_bin" >> "$GITHUB_ENV"
+          echo "LLVM_CONFIG=$llvm_bin/llvm-config" >> "$GITHUB_ENV"
+          echo "PS5_CLANG=$llvm_bin/clang" >> "$GITHUB_ENV"
       - name: Fetch PS5 React
         run: git clone --depth 1 https://github.com/JVK3R/ps5-react.git
       - name: Prepare PS5 React
@@ -58,7 +66,10 @@ jobs:
           npm ci
       - name: Build native title
         working-directory: ps5-react
-        run: PATH="$PWD/.venv/bin:$PATH" npm run build -- --app-dir ../DriveHop/app/drivehop
+        run: |
+          PATH="$PWD/.venv/bin:$PATH" .venv/bin/python tools/build_ps5.py \
+            --app-dir ../DriveHop/app/drivehop \
+            --llvm "$DRIVEHOP_LLVM_BIN"
       - name: Build bundled read-only SMB helper
         run: |
           git clone https://github.com/phantomptr/ps5upload.git ps5upload
