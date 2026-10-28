@@ -54,3 +54,12 @@ index 1927d6b..a24df4d 100644
      mkdir(SMBD_DIR, 0700);
      if (read_key(g_key, g_elf_id, sizeof g_elf_id) != 0) {
          smbd_log("no key at %s: not starting", SMBD_KEY_PATH);
+diff --git a/payload/smb/Makefile b/payload/smb/Makefile
+index ffc8c9f..f92ed73 100644
+--- a/payload/smb/Makefile
++++ b/payload/smb/Makefile
+@@ -28,3 +28,3 @@ CFLAGS := -Wall -Wextra -Werror -g -Os -ffunction-sections -fdata-sections \
+           -I. -I../include -I$(SMB2_DIR)/include
+-LDFLAGS := -Wl,--gc-sections
++LDFLAGS := -Wl,--gc-sections -Wno-unused-command-line-argument
+ LIBS := -lpthread
