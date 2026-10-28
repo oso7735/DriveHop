@@ -312,20 +312,22 @@ function GameRow({game, selected, marked, duplicate, side, index, onSelect, onTo
 }
 
 function DrivePane({side, drive, games, selected, markedKeys, active, duplicateIds, onChooseDrive, onSelect, onToggle, onRefresh, onSpeedTest}) {
+  const driveFocusKey = `${side}-drive-selector`;
+  const topActionFocusKey = side === 'left' ? 'nas-action' : 'cache-action';
   return (
     <FocusScope ends={['up', 'down']}>
       <View className={`w-[535px] h-[510px] rounded-2xl border-[2px] ${active ? 'border-[#45526d]' : 'border-edge'} bg-panel overflow-hidden`}>
       <View className="h-[100px] px-5 pt-4 border-b-[1px] border-edge gap-3">
         <View className="flex-row items-center justify-between">
-          <View focusable onPress={() => onChooseDrive(side)} className="h-[42px] min-w-[230px] px-4 rounded-xl border-[2px] border-edge bg-raised flex-row items-center gap-3 focused:border-mint">
+          <View focusable focusKey={driveFocusKey} nextFocusUp={topActionFocusKey} onPress={() => onChooseDrive(side)} className="h-[42px] min-w-[230px] px-4 rounded-xl border-[2px] border-edge bg-raised flex-row items-center gap-3 focused:border-mint">
             <View className={`w-[9px] h-[9px] rounded-full ${drive ? 'bg-mint' : 'bg-danger'}`} />
             <Text className={`${TEXT} text-[18px]`}>{drive ? drive.label : 'Select a drive'}</Text>
             <Text className={`${MUTED} text-[16px]`}>▼</Text>
           </View>
-          <View focusable onPress={() => onRefresh(side)} className="w-[42px] h-[42px] rounded-xl border-[2px] border-edge items-center justify-center focused:border-mint focused:bg-raised">
+          <View focusable nextFocusUp={topActionFocusKey} onPress={() => onRefresh(side)} className="w-[42px] h-[42px] rounded-xl border-[2px] border-edge items-center justify-center focused:border-mint focused:bg-raised">
             <Text className="font-inter text-[20px] text-mint">↻</Text>
           </View>
-          <View focusable={!!drive && !drive.remote} onPress={() => drive && !drive.remote && onSpeedTest(drive)} className="w-[42px] h-[42px] rounded-xl border-[2px] border-edge items-center justify-center focused:border-mint focused:bg-raised">
+          <View focusable={!!drive && !drive.remote} nextFocusUp={topActionFocusKey} onPress={() => drive && !drive.remote && onSpeedTest(drive)} className="w-[42px] h-[42px] rounded-xl border-[2px] border-edge items-center justify-center focused:border-mint focused:bg-raised">
             <Text className={`font-inter text-[14px] ${drive?.remote ? 'text-[#596174]' : 'text-mint'}`}>SPD</Text>
           </View>
         </View>
@@ -1103,11 +1105,11 @@ function App() {
           </View>
           <View className="flex-row items-center gap-3">
             <View className="px-4 h-[36px] rounded-full bg-[#142623] items-center justify-center"><Text className="font-inter text-[13px] text-mint">BYTE-VERIFIED</Text></View>
-            <View focusable={!cacheDisabled} onPress={() => { if (!cacheDisabled) { setSmbState({status: 'setup', message: ''}); setSmbOpen(true); } }}
+            <View focusable={!cacheDisabled} focusKey="nas-action" nextFocusDown="left-drive-selector" onPress={() => { if (!cacheDisabled) { setSmbState({status: 'setup', message: ''}); setSmbOpen(true); } }}
               className={`h-[38px] px-4 rounded-xl border-[2px] items-center justify-center ${cacheDisabled ? 'border-edge bg-[#11141b]' : 'border-edge bg-raised focused:border-mint'}`}>
               <Text className={`font-inter text-[14px] ${cacheDisabled ? 'text-[#596174]' : 'text-mint'}`}>NAS / SMB</Text>
             </View>
-            <View focusable={!cacheDisabled} onPress={() => !cacheDisabled && setCacheModal({status: 'confirm', message: ''})}
+            <View focusable={!cacheDisabled} focusKey="cache-action" nextFocusDown="right-drive-selector" onPress={() => !cacheDisabled && setCacheModal({status: 'confirm', message: ''})}
               className={`h-[38px] px-4 rounded-xl border-[2px] items-center justify-center ${cacheDisabled ? 'border-edge bg-[#11141b]' : 'border-edge bg-raised focused:border-mint'}`}>
               <Text className={`font-inter text-[14px] ${cacheDisabled ? 'text-[#596174]' : 'text-mint'}`}>Clear Cache</Text>
             </View>
