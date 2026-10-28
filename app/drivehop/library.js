@@ -3,6 +3,43 @@
 export const IMAGE_EXTENSIONS = Object.freeze(['.ffpkg', '.exfat', '.ffpfs', '.ffpfsc']);
 export const DRIVEHOP_TITLE_ID = 'PPSA99777';
 
+export function compareVersions(left, right) {
+  const parts = value => String(value || '').trim().replace(/^v/i, '').split(/[.-]/).map(part => /^\d+$/.test(part) ? Number(part) : part);
+  const a = parts(left);
+  const b = parts(right);
+  for (let index = 0; index < Math.max(a.length, b.length); index++) {
+    const av = a[index] ?? 0;
+    const bv = b[index] ?? 0;
+    if (av === bv) continue;
+    if (typeof av === 'number' && typeof bv === 'number') return av > bv ? 1 : -1;
+    if (typeof av === 'number') return 1;
+    if (typeof bv === 'number') return -1;
+    return String(av).localeCompare(String(bv));
+  }
+  return 0;
+}
+
+export function driveHopUpdateFromRelease(release, currentVersion) {
+  if (!release || release.draft || release.prerelease) return null;
+  const version = String(release.tag_name || '').replace(/^v/i, '');
+  if (!/^\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.-]+)?$/.test(version) || compareVersions(version, currentVersion) <= 0) return null;
+  const filename = `DriveHop-Installer-v${version}.elf`;
+  const asset = (release.assets || []).find(item => item && item.name === filename);
+  if (!asset || !/^https:\/\/github\.com\/oso7735\/DriveHop\/releases\/download\//i.test(asset.browser_download_url || '')) return null;
+  const checksums = (release.assets || []).find(item => item && item.name === 'SHA256SUMS.txt' &&
+    /^https:\/\/github\.com\/oso7735\/DriveHop\/releases\/download\//i.test(item.browser_download_url || ''));
+  const digest = String(asset.digest || '');
+  return {
+    version,
+    name: filename,
+    url: asset.browser_download_url,
+    size: Number(asset.size || 0),
+    sha256: /^sha256:[0-9a-f]{64}$/i.test(digest) ? digest.slice(7).toLowerCase() : '',
+    checksumsUrl: String(checksums?.browser_download_url || ''),
+    pageUrl: String(release.html_url || ''),
+  };
+}
+
 export const DRIVE_SPECS = Object.freeze([
   {id: 'internal', label: 'Internal SSD', root: '/data', kind: 'internal'},
   {id: 'm2-0', label: 'M.2 SSD 0', root: '/mnt/ext0', kind: 'm2'},

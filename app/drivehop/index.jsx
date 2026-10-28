@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
-  AppRegistry, BackHandler, Controller, FileSystem, FocusScope, Http,
+  AppRegistry, BackHandler, Controller, Downloads, FileSystem, FocusScope, Http,
   Image, LocalServer, Notifications, Payloads, Power, ScrollView, Text, View, useNavigationEvents,
 } from '@ps5-react/core';
 import {
   DRIVE_SPECS, activeSelection, basename, destinationPath, displayNameFromFile, etaText,
   enrichGames, formatBytes, formatForName, isAllowedImage, isDriveHopApp, isPartial, joinPath, libraryPaths,
-  duplicateTitleIds, percentOf, queueSpaceNeeds, sameIdentity, speedText,
+  driveHopUpdateFromRelease, duplicateTitleIds, percentOf, queueSpaceNeeds, sameIdentity, speedText,
   titleIdFrom, transferKey, updateManualListText,
 } from './library.js';
 import {
@@ -29,6 +29,9 @@ const SPEED_BYTES = 4 * 1024 * 1024;
 const SHADOWMOUNT_API = 'http://127.0.0.1:10101';
 const SMB_CONFIG_FILE = `${SMB_STATE_DIR}/config.json`;
 const SMB_CATALOG_FILE = `${SMB_LIBRARY_DIR}/drivehop.json`;
+const CURRENT_VERSION = '0.7.0';
+const UPDATE_API = 'https://api.github.com/repos/oso7735/DriveHop/releases/latest';
+const UPDATE_DIR = `${STATE_DIR}/update`;
 
 function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
@@ -53,7 +56,7 @@ function saveSmbConfig(config) {
 
 function writeSmbKey(key) {
   FileSystem.mkdir(SMB_STATE_DIR, {recursive: true});
-  FileSystem.writeFile(SMB_KEY_FILE, `${key}\ndrivehop-0.6.1\n`, {sync: true});
+  FileSystem.writeFile(SMB_KEY_FILE, `${key}\ndrivehop-0.7.0\n`, {sync: true});
   FileSystem.chmod(SMB_KEY_FILE, 0o600);
 }
 
@@ -631,6 +634,43 @@ function CacheModal({state, onClear, onClose}) {
   );
 }
 
+function UpdateModal({state, onCheck, onDownload, onInstall, onClose}) {
+  const busy = state.status === 'checking' || state.status === 'downloading' || state.status === 'installing';
+  const progress = state.total ? percentOf(state.written, state.total) : 0;
+  const available = state.release;
+  return (
+    <Modal onBack={() => !busy && onClose()}>
+      <View className="w-[760px] rounded-3xl border-[2px] border-edge bg-panel p-8 gap-6">
+        <View className="gap-2">
+          <Text className="font-semi text-white text-[30px]">
+            {state.status === 'checking' ? 'Checking for updates…' : state.status === 'downloading' ? `Downloading DriveHop ${available?.version || ''}…` : state.status === 'ready' ? 'Update ready to install' : state.status === 'installing' ? 'Starting verified installer…' : available ? `DriveHop ${available.version} available` : 'DriveHop updates'}
+          </Text>
+          <Text className={`${MUTED} text-[16px]`}>
+            {state.message || `Installed version ${CURRENT_VERSION}. Updates are checked only against the official oso7735/DriveHop GitHub releases.`}
+          </Text>
+        </View>
+        {!!available && <View className="rounded-2xl bg-[#0c1019] border-[1px] border-edge p-5 gap-3">
+          <View className="flex-row justify-between"><Text className={`${MUTED} text-[14px]`}>INSTALLED</Text><Text className={`${TEXT} text-[15px]`}>v{CURRENT_VERSION}</Text></View>
+          <View className="h-[1px] bg-edge" />
+          <View className="flex-row justify-between"><Text className="font-inter text-[14px] text-mint">AVAILABLE</Text><Text className="font-semi text-[15px] text-mint">v{available.version}</Text></View>
+          <Text className={`${MUTED} text-[13px]`}>The installer download is size-checked and SHA-256 verified before it can run.</Text>
+        </View>}
+        {state.status === 'downloading' && <View className="gap-3">
+          <View className="h-[10px] rounded-full bg-edge overflow-hidden"><View className="h-[10px] rounded-full bg-mint" style={{width: `${progress}%`}} /></View>
+          <Text className={`${MUTED} text-[13px]`}>{formatBytes(state.written)} / {formatBytes(state.total)}</Text>
+        </View>}
+        {state.status === 'error' && <View className="rounded-xl bg-[#351b26] border-[1px] border-danger p-4"><Text className="font-inter text-[15px] text-[#fecdd3]">{state.error}</Text></View>}
+        <View className="flex-row justify-end gap-3">
+          {!busy && <View focusable onPress={onClose} className={BUTTON}><Text className={`${TEXT} text-[16px]`}>Close</Text></View>}
+          {(state.status === 'idle' || state.status === 'current' || state.status === 'error') && <View focusable autoFocus onPress={onCheck} className={`${BUTTON} border-mint`}><Text className="font-inter text-[16px] text-mint">Check now</Text></View>}
+          {state.status === 'available' && <View focusable autoFocus onPress={onDownload} className={`${BUTTON} border-mint bg-[#183431]`}><Text className="font-inter text-[16px] text-mint">Download update</Text></View>}
+          {state.status === 'ready' && <View focusable autoFocus onPress={onInstall} className={`${BUTTON} border-mint bg-[#183431]`}><Text className="font-inter text-[16px] text-mint">Install and close DriveHop</Text></View>}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function RecoveryModal({partials, interrupted, onResume, onDelete, onClose}) {
   return (
     <Modal onBack={onClose}>
@@ -695,12 +735,91 @@ function App() {
   const [smbState, setSmbState] = useState({status: 'setup', message: ''});
   const [smbServer, setSmbServer] = useState({state: 'stopped', address: '', port: 0, error: ''});
   const [smbConfig, setSmbConfig] = useState(loadSmbConfig);
+  const [updateOpen, setUpdateOpen] = useState(false);
+  const [updateState, setUpdateState] = useState({status: 'idle', release: null, message: '', error: '', written: 0, total: 0, path: ''});
   const taskRef = useRef(null);
+  const updateTaskRef = useRef(null);
   const catalogRef = useRef([]);
   const cacheTokenRef = useRef('');
   const smbKeyRef = useRef(randomSmbKey());
   const smbPinRef = useRef(String(100000 + Math.floor(Math.random() * 900000)));
   useHaptics();
+
+  const checkForUpdate = async ({background = false} = {}) => {
+    if (!background) setUpdateOpen(true);
+    setUpdateState(previous => ({...previous, status: 'checking', message: '', error: '', written: 0, total: 0}));
+    try {
+      const response = await Http.request(UPDATE_API, {
+        method: 'GET', headers: {'Accept': 'application/vnd.github+json'}, maxBytes: 512 * 1024,
+      });
+      if (!response.ok) throw new Error(`GitHub returned HTTP ${response.status}.`);
+      const releaseJson = await response.json();
+      const release = driveHopUpdateFromRelease(releaseJson, CURRENT_VERSION);
+      if (!release) {
+        setUpdateState({status: 'current', release: null, message: `DriveHop v${CURRENT_VERSION} is the latest official release.`, error: '', written: 0, total: 0, path: ''});
+        return;
+      }
+      if (!release.sha256 && release.checksumsUrl) {
+        const checksums = await Http.request(release.checksumsUrl, {method: 'GET', maxBytes: 64 * 1024});
+        if (checksums.ok) {
+          const text = await checksums.text();
+          const escaped = release.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const match = text.match(new RegExp(`^([0-9a-f]{64})\\s+\\*?${escaped}\\s*$`, 'im'));
+          if (match) release.sha256 = match[1].toLowerCase();
+        }
+      }
+      if (!release.sha256) throw new Error('The release does not publish a trusted SHA-256 for its installer. DriveHop refused the update.');
+      setUpdateState({status: 'available', release, message: `An official update from v${CURRENT_VERSION} to v${release.version} is available.`, error: '', written: 0, total: release.size, path: ''});
+      if (background) {
+        try { Notifications.show(`DriveHop ${release.version} is available`, 'Open DriveHop Updates to download it'); } catch (err) { /* optional */ }
+      }
+    } catch (err) {
+      const error = err?.message || String(err);
+      setUpdateState({status: 'error', release: null, message: background ? 'Automatic update check was unavailable.' : '', error, written: 0, total: 0, path: ''});
+      if (background) console.log(`DriveHop update check: ${error}`);
+    }
+  };
+
+  const downloadUpdate = async () => {
+    const release = updateState.release;
+    if (!release) return;
+    const destination = `${UPDATE_DIR}/${release.name}`;
+    setUpdateState(previous => ({...previous, status: 'downloading', message: 'Downloading from the official GitHub release…', error: '', written: 0, total: release.size, path: destination}));
+    try {
+      FileSystem.mkdir(UPDATE_DIR, {recursive: true});
+      const task = Downloads.enqueue({
+        url: release.url, destination, sha256: release.sha256, expectedBytes: release.size,
+        rejectHtml: true, recoverCompleted: true, unlimited: true, storageRoot: UPDATE_DIR,
+      });
+      updateTaskRef.current = task;
+      const unsubscribe = task.subscribe(snapshot => setUpdateState(previous => ({...previous,
+        written: Number(snapshot.written || 0), total: Number(snapshot.total || release.size || 0)})));
+      try { await task.done; } finally { unsubscribe(); updateTaskRef.current = null; }
+      setUpdateState(previous => ({...previous, status: 'ready', path: destination,
+        message: `DriveHop ${release.version} was downloaded and SHA-256 verified.`}));
+    } catch (err) {
+      updateTaskRef.current = null;
+      setUpdateState(previous => ({...previous, status: 'error', error: err?.message || String(err), message: ''}));
+    }
+  };
+
+  const installUpdate = async () => {
+    if (!updateState.path || !FileSystem.exists(updateState.path)) {
+      setUpdateState(previous => ({...previous, status: 'error', error: 'The verified installer is missing. Download the update again.'}));
+      return;
+    }
+    setUpdateState(previous => ({...previous, status: 'installing', message: 'Sending the verified installer to the local ELF loader…', error: ''}));
+    try {
+      const launched = Payloads.send(updateState.path, {port: 9021});
+      if (!launched.ok) throw new Error(launched.error || 'The payload loader did not accept the installer.');
+      try { Notifications.show('DriveHop update started', 'The app will close while the verified installer runs'); } catch (err) { /* optional */ }
+      setUpdateState(previous => ({...previous, message: 'Installer started. DriveHop will close now; reopen it after the installation notification appears.'}));
+      await delay(1200);
+      BackHandler.exitApp();
+    } catch (err) {
+      setUpdateState(previous => ({...previous, status: 'error', error: `${err?.message || String(err)} Start an ELF loader on port 9021, then try again.`, message: ''}));
+    }
+  };
 
   const connectAndScanSmb = async rawConfig => {
     let config;
@@ -760,6 +879,11 @@ function App() {
   }, [smbOpen]);
 
   useEffect(() => { savePersistentState(queue, interrupted); }, [queue, interrupted]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => checkForUpdate({background: true}), 1800);
+    return () => clearTimeout(timer);
+  }, []);
 
   const refresh = useCallback(async (side, drive) => {
     const current = drive || (side === 'left' ? leftDrive : rightDrive);
@@ -1080,6 +1204,10 @@ function App() {
   };
 
   const closeTop = () => {
+    if (updateOpen) {
+      if (!['checking', 'downloading', 'installing'].includes(updateState.status)) setUpdateOpen(false);
+      return true;
+    }
     if (smbOpen) { setSmbOpen(false); return true; }
     if (picker) { setPicker(null); return true; }
     if (confirm) { setConfirm(null); return true; }
@@ -1095,6 +1223,7 @@ function App() {
   const selectedCount = useMemo(() => libraries.left.length + libraries.right.length, [libraries]);
   const duplicateIds = useMemo(() => duplicateTitleIds(libraries.left, libraries.right), [libraries]);
   const cacheDisabled = job?.status === 'running' || speedTest?.status === 'running';
+  const updateBusy = ['checking', 'downloading', 'installing'].includes(updateState.status);
   const markedCount = marked.left.length + marked.right.length;
   if (phase === 'loading') {
     return (
@@ -1123,6 +1252,12 @@ function App() {
             <View focusable={!cacheDisabled} focusKey="cache-action" nextFocusDown="right-drive-selector" onPress={() => !cacheDisabled && setCacheModal({status: 'confirm', message: ''})}
               className={`h-[38px] px-4 rounded-xl border-[2px] items-center justify-center ${cacheDisabled ? 'border-edge bg-[#11141b]' : 'border-edge bg-raised focused:border-mint'}`}>
               <Text className={`font-inter text-[14px] ${cacheDisabled ? 'text-[#596174]' : 'text-mint'}`}>Clear Cache</Text>
+            </View>
+            <View focusable={!cacheDisabled} onPress={() => !cacheDisabled && setUpdateOpen(true)}
+              className={`h-[38px] px-4 rounded-xl border-[2px] items-center justify-center ${cacheDisabled ? 'border-edge bg-[#11141b]' : updateState.status === 'available' || updateState.status === 'ready' ? 'border-violet bg-[#302647] focused:border-mint' : 'border-edge bg-raised focused:border-mint'}`}>
+              <Text className={`font-inter text-[14px] ${cacheDisabled ? 'text-[#596174]' : updateState.status === 'available' || updateState.status === 'ready' ? 'text-violet' : 'text-mint'}`}>
+                {updateState.release ? `Update ${updateState.release.version}` : `Updates • ${CURRENT_VERSION}`}
+              </Text>
             </View>
             <View focusable onPress={() => setQueueOpen(true)} className="h-[38px] px-4 rounded-xl border-[2px] border-edge bg-raised items-center justify-center focused:border-violet">
               <Text className="font-inter text-[14px] text-violet">Queue {queue.length}</Text>
@@ -1157,6 +1292,8 @@ function App() {
         {!!speedTest && <SpeedModal test={speedTest} onClose={() => setSpeedTest(null)} />}
         {smbOpen && <SmbModal state={smbState} server={smbServer} pin={smbPinRef.current}
           onRetry={() => setSmbState({status: 'setup', message: ''})} onClose={() => setSmbOpen(false)} />}
+        {updateOpen && <UpdateModal state={updateState} onCheck={() => checkForUpdate()}
+          onDownload={downloadUpdate} onInstall={installUpdate} onClose={() => !updateBusy && setUpdateOpen(false)} />}
         {!!job && <TransferProgress job={job} onCancel={() => taskRef.current && taskRef.current.cancel()} onClose={() => setJob(null)} />}
       </View>
     </FocusScope>

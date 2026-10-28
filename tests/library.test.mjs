@@ -3,8 +3,20 @@ import assert from 'node:assert/strict';
 import {
   absoluteHttpUrl, activeSelection, basename, cacheBustedUrl, destinationPath, displayNameFromFile, extension, formatBytes, formatForName,
   duplicateTitleIds, enrichGames, isAllowedImage, isDriveHopApp, isPartial, joinPath, libraryPaths, percentOf,
-  queueSpaceNeeds, sameIdentity, titleIdFrom, transferKey, updateManualListText,
+  compareVersions, driveHopUpdateFromRelease, queueSpaceNeeds, sameIdentity, titleIdFrom, transferKey, updateManualListText,
 } from '../app/drivehop/library.js';
+
+test('accepts only a newer official DriveHop installer release', () => {
+  const release = {tag_name: 'v0.7.0', draft: false, prerelease: false, html_url: 'https://github.com/oso7735/DriveHop/releases/tag/v0.7.0', assets: [{
+    name: 'DriveHop-Installer-v0.7.0.elf', size: 123, digest: `sha256:${'a'.repeat(64)}`,
+    browser_download_url: 'https://github.com/oso7735/DriveHop/releases/download/v0.7.0/DriveHop-Installer-v0.7.0.elf',
+  }]};
+  assert.equal(compareVersions('0.7.0', '0.6.1'), 1);
+  assert.equal(driveHopUpdateFromRelease(release, '0.6.1').sha256, 'a'.repeat(64));
+  assert.equal(driveHopUpdateFromRelease(release, '0.7.0'), null);
+  assert.equal(driveHopUpdateFromRelease({...release, prerelease: true}, '0.6.1'), null);
+  assert.equal(driveHopUpdateFromRelease({...release, assets: [{...release.assets[0], browser_download_url: 'https://example.com/file.elf'}]}, '0.6.1'), null);
+});
 
 test('enriches filename-only games with ShadowMount names and artwork', () => {
   const games = [{key: '/mnt/usb1/homebrew/PPSA01474.exfat', path: '/mnt/usb1/homebrew/PPSA01474.exfat', name: 'PPSA01474', titleId: 'PPSA01474'}];
