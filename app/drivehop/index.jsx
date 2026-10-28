@@ -282,12 +282,12 @@ function Capacity({drive}) {
   );
 }
 
-function GameRow({game, selected, marked, duplicate, side, index, onSelect}) {
+function GameRow({game, selected, marked, duplicate, side, index, onSelect, onToggle}) {
   const [iconFailed, setIconFailed] = useState(false);
   useEffect(() => setIconFailed(false), [game.iconUrl]);
   const initial = (game.name || game.titleId || '?').replace(/^PPSA\d{5}\s*/i, '').trim().slice(0, 1).toUpperCase() || '?';
   return (
-    <View focusable autoFocus={index === 0} onFocus={() => onSelect(game, side)} onPress={() => onSelect(game, side)}
+    <View focusable autoFocus={index === 0} onFocus={() => onSelect(game, side)} onPress={() => onToggle(game, side)}
       className={`h-[76px] px-3 flex-row items-center gap-3 rounded-xl border-[2px] ${marked ? 'border-violet bg-[#242039]' : selected ? 'border-[#45526d] bg-[#171d2b]' : 'border-transparent bg-transparent'} focused:border-mint focused:bg-raised`}>
       <View className={`w-[48px] h-[48px] rounded-xl overflow-hidden items-center justify-center ${game.kind === 'folder' ? 'bg-[#2b4160]' : 'bg-[#253c39]'}`}>
         {!!game.iconUrl && !iconFailed
@@ -311,7 +311,7 @@ function GameRow({game, selected, marked, duplicate, side, index, onSelect}) {
   );
 }
 
-function DrivePane({side, drive, games, selected, markedKeys, active, duplicateIds, onChooseDrive, onSelect, onRefresh, onSpeedTest}) {
+function DrivePane({side, drive, games, selected, markedKeys, active, duplicateIds, onChooseDrive, onSelect, onToggle, onRefresh, onSpeedTest}) {
   return (
     <FocusScope ends={['up', 'down']}>
       <View className={`w-[535px] h-[510px] rounded-2xl border-[2px] ${active ? 'border-[#45526d]' : 'border-edge'} bg-panel overflow-hidden`}>
@@ -335,7 +335,7 @@ function DrivePane({side, drive, games, selected, markedKeys, active, duplicateI
         <ScrollView className="flex-1">
           <View className="px-3 py-2 gap-1">
             {games.map((game, index) => <GameRow key={game.key} game={game} index={index} side={side}
-              selected={selected && selected.key === game.key} marked={markedKeys.includes(game.key)} duplicate={duplicateIds.has(game.titleId)} onSelect={onSelect} />)}
+              selected={selected && selected.key === game.key} marked={markedKeys.includes(game.key)} duplicate={duplicateIds.has(game.titleId)} onSelect={onSelect} onToggle={onToggle} />)}
           </View>
         </ScrollView>
       ) : (
@@ -373,7 +373,7 @@ function Shuttle({activeSide, selectionCount, nasSource, nasTarget, onTransfer})
         className={`w-[108px] h-[54px] rounded-xl border-[2px] items-center justify-center ${moveDisabled ? 'border-edge bg-[#11141b]' : 'border-edge bg-raised focused:border-violet focused:bg-[#29223b]'}`}>
         <Text className={`font-inter text-[16px] ${moveDisabled ? 'text-[#596174]' : 'text-white'}`}>Move{selectionCount > 1 ? ` ${selectionCount}` : ''} {arrow}</Text>
       </View>
-      <Text className={`${MUTED} text-[12px] text-center`}>{nasTarget ? 'NAS is read-only' : nasSource ? 'NAS copies only' : selectionCount > 1 ? 'Selected games run sequentially' : 'Square selects more games'}</Text>
+      {(nasTarget || nasSource || selectionCount > 1) && <Text className={`${MUTED} text-[12px] text-center`}>{nasTarget ? 'NAS is read-only' : nasSource ? 'NAS copies only' : 'Selected games run sequentially'}</Text>}
     </View>
   );
 }
@@ -822,6 +822,15 @@ function App() {
     setActiveSide(side);
   };
 
+  const toggleGame = (game, side) => {
+    selectGame(game, side);
+    setMarked(previous => {
+      const keys = previous[side];
+      return {...previous, [side]: keys.includes(game.key) ? keys.filter(key => key !== game.key) : [...keys, game.key]};
+    });
+    try { Controller.vibrate(0.3, 35); } catch (err) { /* optional */ }
+  };
+
   const sourceDrive = activeSide === 'left' ? leftDrive : rightDrive;
   const targetDrive = activeSide === 'left' ? rightDrive : leftDrive;
   const chosenGame = selected[activeSide];
@@ -1074,19 +1083,6 @@ function App() {
   const duplicateIds = useMemo(() => duplicateTitleIds(libraries.left, libraries.right), [libraries]);
   const cacheDisabled = job?.status === 'running' || speedTest?.status === 'running';
   const markedCount = marked.left.length + marked.right.length;
-  const handleAction = action => {
-    if (action !== 'square') return false;
-    if (picker || confirm || queueOpen || recoveryOpen || cacheModal || speedTest || job || smbOpen) return false;
-    const game = selected[activeSide];
-    if (!game) return true;
-    setMarked(previous => {
-      const keys = previous[activeSide];
-      return {...previous, [activeSide]: keys.includes(game.key) ? keys.filter(key => key !== game.key) : [...keys, game.key]};
-    });
-    try { Controller.vibrate(0.3, 35); } catch (err) { /* optional */ }
-    return true;
-  };
-
   if (phase === 'loading') {
     return (
       <View className="w-screen h-screen bg-night items-center justify-center gap-5">
@@ -1098,7 +1094,7 @@ function App() {
   }
 
   return (
-    <FocusScope wrap onBack={closeTop} onAction={handleAction}>
+    <FocusScope wrap onBack={closeTop}>
       <View className="w-screen h-screen bg-night">
         <View className="h-[86px] px-10 flex-row items-center justify-between border-b-[1px] border-edge">
           <View className="flex-row items-center gap-4">
@@ -1127,15 +1123,15 @@ function App() {
 
         <View className="flex-1 px-10 py-5 flex-row justify-center">
           <DrivePane side="left" drive={leftDrive} games={libraries.left} selected={selected.left} active={activeSide === 'left'}
-            markedKeys={marked.left} duplicateIds={duplicateIds} onChooseDrive={setPicker} onSelect={selectGame} onRefresh={side => refresh(side)} onSpeedTest={runSpeedTest} />
+            markedKeys={marked.left} duplicateIds={duplicateIds} onChooseDrive={setPicker} onSelect={selectGame} onToggle={toggleGame} onRefresh={side => refresh(side)} onSpeedTest={runSpeedTest} />
           <Shuttle activeSide={activeSide} selectionCount={targetDrive ? chosenGames.length : 0}
             nasSource={!!sourceDrive?.remote} nasTarget={!!targetDrive?.remote} onTransfer={requestTransfer} />
           <DrivePane side="right" drive={rightDrive} games={libraries.right} selected={selected.right} active={activeSide === 'right'}
-            markedKeys={marked.right} duplicateIds={duplicateIds} onChooseDrive={setPicker} onSelect={selectGame} onRefresh={side => refresh(side)} onSpeedTest={runSpeedTest} />
+            markedKeys={marked.right} duplicateIds={duplicateIds} onChooseDrive={setPicker} onSelect={selectGame} onToggle={toggleGame} onRefresh={side => refresh(side)} onSpeedTest={runSpeedTest} />
         </View>
 
         <View className="h-[54px] px-10 border-t-[1px] border-edge flex-row items-center justify-between">
-          <Text className={`${MUTED} text-[13px]`}>D-pad  Navigate    Square  Multi-select    Cross  Activate    Circle  Exit</Text>
+          <Text className={`${MUTED} text-[13px]`}>D-pad  Navigate    Cross  Select    Circle  Exit</Text>
           <Text className={`${MUTED} text-[13px]`}>{duplicateIds.size ? `${duplicateIds.size} duplicate title${duplicateIds.size === 1 ? '' : 's'} • ` : ''}Folder • FFPKG • exFAT • FFPFS • FFPFSC</Text>
         </View>
 

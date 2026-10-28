@@ -21,7 +21,7 @@ This project is independent homebrew and is not affiliated with Sony.
   (for removable drives) top-level directory.
 - Vertical navigation stays inside its current pane; Left/Right explicitly
   switches panes.
-- Square toggles multi-select in either pane. Copy and Move preflight the whole
+- Cross toggles selection in either pane. Copy and Move preflight the whole
   active-pane selection, then run each byte-verified transfer sequentially or
   add the complete batch to the persistent queue.
 - A guarded **Clear Cache** action invalidates DriveHop artwork/metadata,
