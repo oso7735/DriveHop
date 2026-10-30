@@ -225,3 +225,20 @@ export function transferKey(item) {
   if (!item || !item.game || !item.target) return '';
   return `${item.mode}:${item.game.path}:${item.target.root}:${item.game.sourceName}`;
 }
+
+export function transferResumeToken(game) {
+  const identity = game?.identity || {};
+  const value = [game?.path || '', game?.size || 0, game?.modified || 0, identity.device || identity.dev || '',
+    identity.inode || identity.ino || '', identity.size || '', identity.modified || identity.mtime || ''].join('|');
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index++) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, '0');
+}
+
+export function shouldDeleteSource(mode, deleteAfterCopy, remoteSource = false, remoteTarget = false) {
+  if (remoteSource || remoteTarget) return false;
+  return mode === 'move' || (mode === 'copy' && deleteAfterCopy === true);
+}

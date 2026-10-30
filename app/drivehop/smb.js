@@ -44,7 +44,7 @@ export function smbConnectionFields(config) {
 
 export function gamesFromSmbCatalogue(data, config) {
   const items = Array.isArray(data?.items) ? data.items : [];
-  return items.filter(item => ['folder', 'image'].includes(item?.kind)).map(item => {
+  return items.filter(item => ['folder', 'image'].includes(item?.kind) && !String(item?.path || '').endsWith('.drivehop-stage')).map(item => {
     const path = String(item.path || '');
     const sourceName = String(item.name || path.split('/').pop() || '');
     const titleId = String(item.title_id || '').toUpperCase();

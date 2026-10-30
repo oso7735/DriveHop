@@ -10,20 +10,38 @@ This project is independent homebrew and is not affiliated with Sony.
 ## What is implemented
 
 - Polished native 1080p/4K PS5 interface built with PS5 React.
+- Automatic console-language detection through the PS5 system setting. English
+  and Spanish (`es`, including Latin American Spanish) are included; unsupported
+  languages fall back to English without changing game titles or paths.
+- A controller-first Settings screen with persistent Midnight, Ocean, Ember and
+  Amethyst themes.
+- Optional **Delete source after Copy** behavior. It is off by default and turns
+  a successful Copy into a source-removing operation only after the selected
+  verification, publication and source-identity checks have completed. SMB
+  transfers never delete their source.
 - Custom 4K BC7 home-screen artwork shown while DriveHop is highlighted.
 - Internal SSD, M.2 (`/mnt/ext0`, `/mnt/ext1`) and USB (`/mnt/usb0` through
   `/mnt/usb7`) discovery, selection and capacity reporting.
-- Read-only SMB2/SMB3 NAS support through a bundled, pinned `libsmb2` helper.
+- SMB2/SMB3 NAS read/write Copy support through a bundled, pinned `libsmb2` helper.
   A PIN-protected phone/computer page collects the server, share and credentials;
-  the NAS then appears as a selectable drive in either pane. Multi-select,
-  destination-space checks, progress and cancellation work for NAS downloads.
+  the NAS then appears as a selectable drive in either pane. A persistent
+  **Allow writing to NAS** setting controls uploads. Multi-select,
+  destination-space checks, progress and cancellation work in both directions.
+- Atomic, resumable NAS uploads. DriveHop copies into a hidden, source-identity
+  keyed `<game>.drivehop-<token>.drivehop-stage` path, resumes completed folder files and partial-file
+  bytes after interruption, then publishes the complete game with a same-folder
+  SMB rename. The final game name is never used for an incomplete upload.
 - Dual-pane libraries that scan each drive's `homebrew`, `etaHEN/games`, and
   (for removable drives) top-level directory.
 - Vertical navigation stays inside its current pane; Left/Right explicitly
   switches panes.
 - Cross toggles selection in either pane. Copy and Move preflight the whole
-  active-pane selection, then run each byte-verified transfer sequentially or
-  add the complete batch to the persistent queue.
+  active-pane selection, then run each transfer sequentially or add the complete
+  batch to the persistent queue.
+- **Verified** mode rereads every destination byte before publication. Optional
+  **Turbo** mode removes that second whole-game I/O pass while retaining a fresh
+  staged copy, `fsync`, size validation, atomic publication and source-identity
+  checks. Verified remains the default and Turbo mode is saved per user.
 - A guarded **Clear Cache** action invalidates DriveHop artwork/metadata,
   removes its disposable speed-test file, resets ShadowMountPlus scan attempts,
   and requests a full library rescan. It never deletes games, saves, `app.db`,
@@ -35,13 +53,20 @@ This project is independent homebrew and is not affiliated with Sony.
 - Real game names and tile artwork from ShadowMountPlus's local game catalog;
   installed app metadata and filename-based labels remain as offline fallbacks.
 - Copy or move in either direction.
-- Resumable background transfers. Data is written under `<destination>.partial`,
-  verified byte-for-byte, and atomically renamed into place.
-- A move deletes the original only after verification and after confirming that
-  the selected source is still the same filesystem object.
+- A preflight review runs before every confirmation. It checks destination
+  conflicts, SMB-safe names, current free space, batch size and existing local
+  or NAS staging data, and blocks Start until hard problems are resolved.
+- Resumable Verified transfers. Data is written under `<destination>.partial`,
+  verified byte-for-byte, and atomically renamed into place. Turbo retries start
+  fresh rather than trusting bytes from an interrupted run.
+- A move deletes the original only after the selected mode's checks and after
+  confirming that the source is still the same filesystem object.
 - Console sleep is held off during a transfer.
 - Existing destinations are never overwritten.
 - Persistent multi-game queue with combined destination-space preflight.
+- Persistent transfer history for completed, cancelled, failed and interrupted
+  NAS work. Failed entries can be retried, while a redacted JSON diagnostics
+  report can be exported under `/data/drivehop/exports` for troubleshooting.
 - Duplicate-title warnings when the same title exists on both selected drives.
 - Recovery screen for resuming or removing abandoned `.partial` transfers.
 - Per-drive verified write/read speed test.
@@ -54,7 +79,7 @@ images and presenting them as ready games would be misleading.
 
 ## Safety model
 
-The copy implementation comes from PS5 React's native filesystem worker. It:
+In the default Verified mode, PS5 React's native filesystem worker:
 
 1. writes to a hidden `.partial` destination;
 2. supports restart/resume at durable 32 MiB chunk boundaries;
@@ -66,11 +91,19 @@ For a move, DriveHop performs deletion as a separate final step. A cancelled or
 failed job may leave a resumable `.partial` item, but never a partially published
 game at the final destination.
 
-NAS shares have a stricter policy: DriveHop never uploads, renames or deletes
-anything on SMB. The helper negotiates SMB2/SMB3 with signing enabled, stages
-downloads before publishing them, and validates the resulting file size. Local
-drive-to-drive transfers retain the stronger byte-for-byte verification described
-above.
+NAS shares have a stricter policy: DriveHop permits Copy in either direction but
+never overwrites or deletes an existing NAS item, and never offers Move for an
+SMB transfer. Uploads live under a hidden `.drivehop-stage` top-level name;
+individual files use `.ps5u-part` while incomplete. Cancellation keeps that
+private staging data for a later retry, and successful completion atomically
+renames the staging item to the requested final name.
+The helper negotiates SMB2/SMB3 with signing enabled and validates transfer
+sizes. Local
+drive-to-drive transfers retain the stronger byte-for-byte verification
+described above unless the user explicitly selects Turbo. Turbo never publishes
+a partial destination and always syncs and size-checks it, but it does not reread
+every byte; use Verified for irreplaceable sources and before deleting the only
+trusted copy.
 
 ## Build
 
@@ -91,7 +124,7 @@ PATH="$PWD/.venv/bin:$PATH" npm run build -- --app-dir ../DriveHop/app/drivehop
 
 The result is written under PS5 React's `dist/PPSA99777` directory. From Windows,
 use the included GitHub Actions workflow: GitHub's `macos-15-intel` runner
-produces a checksummed `DriveHop-PPSA99777-v0.7.0` artifact. See
+produces a checksummed `DriveHop-PPSA99777-v0.8.0` artifact. See
 [`docs/BUILD-ON-GITHUB.md`](docs/BUILD-ON-GITHUB.md).
 
 Run the platform-neutral model tests anywhere Node.js is available:
@@ -102,7 +135,7 @@ npm test
 
 ## Install on the PS5
 
-1. Download `DriveHop-Installer-v0.7.0.elf` from the build artifact.
+1. Download `DriveHop-Installer-v0.8.0.elf` from the build artifact.
 2. Close DriveHop if it is already running, then send the installer to the PS5's
    ELF loader on port `9021` using Payload Manager or another payload sender.
 3. Wait for the installation notification. The installer stages and verifies
@@ -120,7 +153,7 @@ startup. Open **Updates** to check manually, download a verified installer, and
 select **Install and close DriveHop**. The final step requires an ELF loader on
 port `9021`, just like a manual installer launch.
 
-For recovery or manual installation, extract `DriveHop-PPSA99777-v0.7.0.zip`
+For recovery or manual installation, extract `DriveHop-PPSA99777-v0.8.0.zip`
 and copy its complete `PPSA99777` folder to `/data/homebrew/PPSA99777`.
 
 Release archives explicitly store mode `0777` on every directory and file. The
@@ -151,7 +184,8 @@ undocumented system files.
 - `.ffpfs` and `.ffpfsc` support follows ShadowMountPlus, where PFS remains
   experimental. DriveHop transfers these files without converting them.
 - SMB requires an IPv4-reachable NAS with SMB2 or SMB3 enabled. SMB1 is not
-  supported. Use a dedicated read-only NAS account when possible. A password is
+  supported. Use a dedicated NAS account restricted to the selected game share;
+  give it write access only if uploads are wanted. A password is
   session-only unless Remember password is selected; remembered settings are
   stored mode `0600` under `/data/drivehop/smb`.
 - A copied duplicate is not forced into ShadowMountPlus's manual list. A move

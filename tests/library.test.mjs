@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   absoluteHttpUrl, activeSelection, basename, cacheBustedUrl, destinationPath, displayNameFromFile, extension, formatBytes, formatForName,
   duplicateTitleIds, enrichGames, isAllowedImage, isDriveHopApp, isPartial, joinPath, libraryPaths, percentOf,
-  compareVersions, driveHopUpdateFromRelease, queueSpaceNeeds, sameIdentity, titleIdFrom, transferKey, updateManualListText,
+  compareVersions, driveHopUpdateFromRelease, queueSpaceNeeds, sameIdentity, shouldDeleteSource, titleIdFrom, transferKey, transferResumeToken, updateManualListText,
 } from '../app/drivehop/library.js';
 
 test('accepts only a newer official DriveHop installer release', () => {
@@ -95,4 +95,19 @@ test('multi-select prefers marked games and falls back to the highlighted game',
   assert.deepEqual(activeSelection(games, ['c', 'a'], games[1]), [games[0], games[2]]);
   assert.deepEqual(activeSelection(games, [], games[1]), [games[1]]);
   assert.deepEqual(activeSelection(games, ['missing'], null), []);
+});
+
+test('delete-after-copy never removes a source during an SMB transfer', () => {
+  assert.equal(shouldDeleteSource('copy', false, false), false);
+  assert.equal(shouldDeleteSource('copy', true, false), true);
+  assert.equal(shouldDeleteSource('copy', true, true), false);
+  assert.equal(shouldDeleteSource('copy', true, false, true), false);
+  assert.equal(shouldDeleteSource('move', false, false), true);
+  assert.equal(shouldDeleteSource('move', false, false, true), false);
+});
+
+test('resume staging tokens are stable for the same source identity', () => {
+  const game = {path: '/data/homebrew/Game.exfat', size: 99, modified: 7, identity: {device: 1, inode: 2, size: 99, modified: 7}};
+  assert.equal(transferResumeToken(game), transferResumeToken({...game, name: 'Display name'}));
+  assert.notEqual(transferResumeToken(game), transferResumeToken({...game, identity: {...game.identity, inode: 3}}));
 });

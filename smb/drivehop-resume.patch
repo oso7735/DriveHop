@@ -1,0 +1,261 @@
+diff --git a/payload/smb/smbd_copy.c b/payload/smb/smbd_copy.c
+index 0e787f9..30020a1 100644
+--- a/payload/smb/smbd_copy.c
++++ b/payload/smb/smbd_copy.c
+@@ -119,20 +119,32 @@ static void drop_part(ctx_t *c, const char *part) {
+ static int copy_file(ctx_t *c, const char *sp, const char *dp) {
+     char part[SMBP_PATH_MAX];
+     void *in = NULL, *out = NULL;
+-    xstat_t ds;
++    xstat_t ds, ss, ps;
+     uint64_t off = 0;
+     int rc, existed = 0, stries = 0, dtries = 0;
+ 
+     set_current(c->pr, sp);
++    rc = c->src->ops->stat(c->src, sp, &ss);
++    if (rc != 0 || ss.kind != XK_FILE) return rc != 0 ? rc : XE_BAD_REQUEST;
+     rc = c->dst->ops->stat(c->dst, dp, &ds);
+     if (rc == 0) {
+         if (ds.kind == XK_DIR) return XE_IS_DIR;
++        if (c->o->resume && ds.size == ss.size) {
++            c->pr->bytes_done += ss.size;
++            c->pr->files_done++;
++            return 0;
++        }
+         if (!c->o->overwrite) return XE_EXISTS;
+         existed = 1;
+     } else if (rc != XE_NOT_FOUND) {
+         return rc;
+     }
+     if (smbp_part_name(dp, part, sizeof part) != 0) return XE_BAD_NAME;
++    if (c->o->resume && c->dst->ops->stat(c->dst, part, &ps) == 0) {
++        if (ps.kind != XK_FILE || ps.size > ss.size) return XE_BAD_REQUEST;
++        off = ps.size;
++        c->pr->bytes_done += off;
++    }
+ 
+     for (;;) {
+         rc = c->src->ops->open_read(c->src, sp, &in);
+@@ -140,7 +152,7 @@ static int copy_file(ctx_t *c, const char *sp, const char *dp) {
+         if ((rc = recover(c, c->src, rc, &stries)) != 0) return rc;
+     }
+     for (;;) {
+-        rc = c->dst->ops->open_write(c->dst, part, 0, &out);
++        rc = c->dst->ops->open_write(c->dst, part, off > 0, &out);
+         if (rc == 0) break;
+         if ((rc = recover(c, c->dst, rc, &dtries)) != 0) {
+             c->src->ops->close(c->src, in);
+@@ -209,7 +221,7 @@ fail:
+ fail:
+     if (in) c->src->ops->close(c->src, in);
+     if (out) c->dst->ops->close(c->dst, out);
+-    drop_part(c, part);
++    if (!c->o->resume) drop_part(c, part);
+     return rc;
+ }
+ 
+@@ -292,7 +304,7 @@ static int copy_dir(ctx_t *c, const char *sp, const char *dp, int depth) {
+             note_failed(c, dp);
+             return XE_NOT_DIR;
+         }
+-        if (depth == 0 && !c->o->overwrite) return XE_EXISTS;
++        if (depth == 0 && !c->o->overwrite && !c->o->resume) return XE_EXISTS;
+     } else if (rc == XE_NOT_FOUND) {
+         for (;;) {
+             rc = c->dst->ops->mkdir(c->dst, dp);
+diff --git a/payload/smb/smbd_copy.h b/payload/smb/smbd_copy.h
+index cab9160..808fd15 100644
+--- a/payload/smb/smbd_copy.h
++++ b/payload/smb/smbd_copy.h
+@@ -83,6 +83,9 @@ typedef struct {
+ 
+ typedef struct {
+     int overwrite;
++    /* Continue a DriveHop-owned staging destination after interruption. Completed files whose
++     * size still matches are skipped; an incomplete .ps5u-part continues at its durable size. */
++    int resume;
+     /* Leave out macOS metadata (smbp_skip_download) while walking a folder. */
+     int skip_mac_metadata;
+     /* Free space the destination must keep beyond what the copy writes. */
+diff --git a/payload/smb/smbd_jobs.c b/payload/smb/smbd_jobs.c
+index b9fbb61..d1a7a80 100644
+--- a/payload/smb/smbd_jobs.c
++++ b/payload/smb/smbd_jobs.c
+@@ -26,6 +26,7 @@ typedef struct {
+     char src[SMBP_PATH_MAX];
+     char dst[SMBP_PATH_MAX];
+     int overwrite;
++    int resume;
+     int err;
+     char failed[SMBP_PATH_MAX];
+     char detail[160];
+@@ -65,6 +66,7 @@ static void *job_main(void *arg) {
+         memset(&o, 0, sizeof o);
+         j->dialect = smbfs_dialect(&smb);
+         o.overwrite = j->overwrite;
++        o.resume = j->resume;
+         if (j->kind == JOB_DOWN) {
+             o.skip_mac_metadata = 1;
+             o.space_margin = JOB_SPACE_MARGIN;
+@@ -123,7 +125,7 @@ static job_t *slot_locked(void) {
+     return best;
+ }
+ 
+-int jobs_start(job_kind_t kind, const smbconn_t *c, const char *src, const char *dst, int overwrite, char id[33]) {
++int jobs_start(job_kind_t kind, const smbconn_t *c, const char *src, const char *dst, int overwrite, int resume, char id[33]) {
+     pthread_attr_t at;
+     pthread_t th;
+     job_t *j;
+@@ -152,6 +154,7 @@ int jobs_start(job_kind_t kind, const smbconn_t *c, const char *src, const char
+     snprintf(j->src, sizeof j->src, "%s", src);
+     snprintf(j->dst, sizeof j->dst, "%s", dst ? dst : "");
+     j->overwrite = overwrite;
++    j->resume = resume;
+     j->started = time(NULL);
+     j->state = ST_RUNNING;
+     memcpy(id, j->id, 33);
+diff --git a/payload/smb/smbd_jobs.h b/payload/smb/smbd_jobs.h
+index 2ec87d3..836a31d 100644
+--- a/payload/smb/smbd_jobs.h
++++ b/payload/smb/smbd_jobs.h
+@@ -17,7 +17,7 @@ typedef enum { JOB_DOWN = 1, JOB_UP = 2, JOB_REMOVE = 3, JOB_SCAN_SMB = 4, JOB_S
+  * share to walk, `dst` the library source id; SCAN_LOCAL: the console's drives, `c` unused,
+  * `dst` the source id). A scan of a source that is being scanned is XE_BUSY. The password in `c` is copied and
+  * wiped when the job ends. 0 with `id` (33 bytes) set, or a negative xerr_t (XE_BUSY: too many). */
+-int jobs_start(job_kind_t kind, const smbconn_t *c, const char *src, const char *dst, int overwrite, char id[33]);
++int jobs_start(job_kind_t kind, const smbconn_t *c, const char *src, const char *dst, int overwrite, int resume, char id[33]);
+ /* Appends the job's status object to `b`; XE_NOT_FOUND when there is no such job. */
+ int jobs_status(const char *id, sj_buf_t *b);
+ /* {"jobs":[...]} of every listed job. */
+diff --git a/payload/smb/smbd_main.c b/payload/smb/smbd_main.c
+index ba944e1..86567fd 100644
+--- a/payload/smb/smbd_main.c
++++ b/payload/smb/smbd_main.c
+@@ -425,10 +425,12 @@ static void op_simple(const char *op, const char *r, size_t n, sj_buf_t *b) {
+     if (rc != 0) reply_err(b, rc, NULL);
+ }
+ 
++static int drivehop_stage(const char *path);
++
+ static void op_copy(const char *r, size_t n, sj_buf_t *b, int remove) {
+     smbconn_t c;
+     char dir[8], src[SMBP_PATH_MAX], dst[SMBP_PATH_MAX], id[33];
+-    int rc, overwrite = 0;
++    int rc, overwrite = 0, resume = 0;
+     job_kind_t kind;
+     if ((rc = conn_from(r, n, &c, 1)) != 0) goto bad;
+     if (remove) {
+@@ -448,6 +450,10 @@ static void op_copy(const char *r, size_t n, sj_buf_t *b, int remove) {
+             rc = XE_BAD_REQUEST;
+             goto bad;
+         }
++        if (sj_bool(r, n, "resume", &resume) < 0) {
++            rc = XE_BAD_REQUEST;
++            goto bad;
++        }
+         if (strcmp(dir, "down") == 0) {
+             kind = JOB_DOWN;
+             if ((rc = rel_from(r, n, "src", src, sizeof src)) != 0 || (rc = local_from(r, n, "dest", dst, sizeof dst)) != 0)
+@@ -472,7 +478,11 @@ static void op_copy(const char *r, size_t n, sj_buf_t *b, int remove) {
+             goto bad;
+         }
+     }
+-    rc = jobs_start(kind, &c, src, dst, overwrite, id);
++    if (resume && (kind != JOB_UP || !drivehop_stage(dst))) {
++        rc = XE_ACCESS;
++        goto bad;
++    }
++    rc = jobs_start(kind, &c, src, dst, overwrite, resume, id);
+     smbconn_clear(&c);
+     if (rc != 0) {
+         reply_err(b, rc, NULL);
+@@ -488,6 +498,48 @@ bad:
+     reply_err(b, rc, NULL);
+ }
+ 
++static int drivehop_stage(const char *path) {
++    static const char suffix[] = ".drivehop-stage";
++    size_t n = strlen(path), s = sizeof suffix - 1;
++    return n > s && strcmp(path + n - s, suffix) == 0;
++}
++
++static void op_publish(const char *r, size_t n, sj_buf_t *b) {
++    smbconn_t c;
++    xfs_t fs;
++    xstat_t st;
++    char src[SMBP_PATH_MAX], dst[SMBP_PATH_MAX], sp[SMBP_PATH_MAX], dp[SMBP_PATH_MAX], detail[160];
++    int rc;
++    if ((rc = conn_from(r, n, &c, 1)) != 0 ||
++        (rc = rel_from(r, n, "src", src, sizeof src)) != 0 ||
++        (rc = rel_from(r, n, "dest", dst, sizeof dst)) != 0) goto bad;
++    smbp_parent(src, sp, sizeof sp);
++    smbp_parent(dst, dp, sizeof dp);
++    if (!drivehop_stage(src) || !dst[0] || strcmp(sp, dp) != 0) {
++        rc = XE_BAD_REQUEST;
++        goto bad;
++    }
++    rc = smbfs_open(&fs, &c, detail, sizeof detail);
++    smbconn_clear(&c);
++    if (rc != 0) {
++        reply_err(b, rc, detail);
++        return;
++    }
++    rc = fs.ops->stat(&fs, dst, &st);
++    if (rc == 0) rc = XE_EXISTS;
++    else if (rc == XE_NOT_FOUND) rc = fs.ops->rename(&fs, src, dst, 0);
++    smbfs_close(&fs);
++    if (rc != 0) reply_err(b, rc, NULL);
++    else {
++        cache_drop();
++        sj_raw(b, "{\"ok\":true}");
++    }
++    return;
++bad:
++    smbconn_clear(&c);
++    reply_err(b, rc, NULL);
++}
++
+ static void op_scan(const char *r, size_t n, sj_buf_t *b) {
+     smbconn_t c;
+     char source[LIB_SOURCE_MAX], path[SMBP_PATH_MAX], id[33];
+@@ -503,7 +555,7 @@ static void op_scan(const char *r, size_t n, sj_buf_t *b) {
+         reply_err(b, rc, NULL);
+         return;
+     }
+-    rc = jobs_start(local ? JOB_SCAN_LOCAL : JOB_SCAN_SMB, &c, path, source, 0, id);
++    rc = jobs_start(local ? JOB_SCAN_LOCAL : JOB_SCAN_SMB, &c, path, source, 0, 0, id);
+     smbconn_clear(&c);
+     if (rc != 0) {
+         reply_err(b, rc, NULL);
+@@ -550,6 +602,8 @@ static void handle(const char *r, size_t n, sj_buf_t *b) {
+         op_scan(r, n, b);
+     } else if (strcmp(op, "mkdir") == 0) {
+         op_simple(op, r, n, b);
++    } else if (strcmp(op, "publish") == 0) {
++        op_publish(r, n, b);
+     } else if (strcmp(op, "remove") == 0) {
+         reply_err(b, XE_ACCESS, "DriveHop never deletes from NAS shares.");
+     } else if (strcmp(op, "job") == 0 || strcmp(op, "cancel") == 0) {
+diff --git a/payload/tests/smbd_copy_selftest.c b/payload/tests/smbd_copy_selftest.c
+index 49ef43e..68fe46c 100644
+--- a/payload/tests/smbd_copy_selftest.c
++++ b/payload/tests/smbd_copy_selftest.c
+@@ -619,6 +619,18 @@ static void t_upload(void) {
+     rc = copy_remove_tree(&dst, "Backup/up", &pr);
+     CHECK(rc == 0 && !find(&m, "Backup/up") && !find(&m, "Backup/up/a.txt") && find(&m, "Backup"));
+     CHECK(copy_remove_tree(&dst, "Backup/nothing", &pr) == XE_NOT_FOUND);
++
++    /* A new DriveHop job resumes the durable part instead of retransmitting its prefix. */
++    lp(f, "resume-source.bin");
++    write_file(f, k_big);
++    add(&m, "Backup/resume.drivehop-stage.ps5u-part", XK_FILE, k_big, 17);
++    o.resume = 1;
++    memset(&pr, 0, sizeof pr);
++    rc = copy_run(&src, f, &dst, "Backup/resume.drivehop-stage", &o, &pr, failed, sizeof failed);
++    CHECK(rc == 0 && pr.bytes_done == sizeof k_big - 1 && pr.files_done == 1);
++    x = find(&m, "Backup/resume.drivehop-stage");
++    CHECK(x && x->size == sizeof k_big - 1 && memcmp(x->data, k_big, x->size) == 0);
++    CHECK(!find(&m, "Backup/resume.drivehop-stage.ps5u-part"));
+     rm_rf(s);
+     mem_free(&m);
+ }

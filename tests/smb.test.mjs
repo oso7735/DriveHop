@@ -27,6 +27,7 @@ test('SMB catalogue only exposes transferable game formats', () => {
   const games = gamesFromSmbCatalogue({items: [
     {kind: 'image', path: 'A/PPSA01234 Game.exfat', name: 'PPSA01234 Game.exfat', title_id: 'PPSA01234', size: 12},
     {kind: 'folder', path: 'B/Game', name: 'Game', title: 'Real Game', title_id: 'PPSA09999'},
+    {kind: 'folder', path: 'B/Game.drivehop-stage', name: 'Game.drivehop-stage', title: 'Hidden staging copy'},
     {kind: 'pkg', path: 'Ignored.pkg', name: 'Ignored.pkg'},
   ]}, config);
   assert.equal(games.length, 2);

@@ -1,7 +1,7 @@
 export default {
   fonts: {
-    'Inter-Regular': {extraGlyphs: '←→↔↻•–—…✓✕⚠×○'},
-    'Inter-SemiBold': {extraGlyphs: '←→↔↻•–—…✓✕⚠×○'},
-    'Inter-Bold': {extraGlyphs: '←→↔↻•–—…✓✕⚠×○'},
+    'Inter-Regular': {sizes: [14, 17, 18, 20, 21, 23, 24, 26, 27, 30, 32, 36, 41, 45, 48, 51, 63], extraGlyphs: '¿ÁÉÑÓÚáéíñóú←→↔↻•–—…✓✕⚠×○'},
+    'Inter-SemiBold': {sizes: [14, 17, 18, 20, 21, 23, 24, 26, 27, 30, 32, 36, 41, 45, 48, 51, 63], extraGlyphs: '¿ÁÉÑÓÚáéíñóú←→↔↻•–—…✓✕⚠×○'},
+    'Inter-Bold': {sizes: [14, 17, 18, 20, 21, 23, 24, 26, 27, 30, 32, 36, 41, 45, 48, 51, 63], extraGlyphs: '¿ÁÉÑÓÚáéíñóú←→↔↻•–—…✓✕⚠×○'},
   },
 };

@@ -24,7 +24,7 @@ diff --git a/payload/smb/smbd_main.c b/payload/smb/smbd_main.c
 index 1927d6b..a24df4d 100644
 --- a/payload/smb/smbd_main.c
 +++ b/payload/smb/smbd_main.c
-@@ -538,14 +538,16 @@ static void handle(const char *r, size_t n, sj_buf_t *b) {
+@@ -538,14 +538,19 @@ static void handle(const char *r, size_t n, sj_buf_t *b) {
          op_shares(r, n, b);
      } else if (strcmp(op, "list") == 0) {
          op_list(r, n, b);
@@ -36,16 +36,19 @@ index 1927d6b..a24df4d 100644
 -    } else if (strcmp(op, "remove") == 0) {
 -        op_copy(r, n, b, 1);
 +        char dir[8] = {0};
-+        if (sj_str(r, n, "dir", dir, sizeof dir) == 1 && strcmp(dir, "down") == 0) op_copy(r, n, b, 0);
-+        else reply_err(b, XE_ACCESS, "DriveHop keeps NAS shares read-only.");
++        if (sj_str(r, n, "dir", dir, sizeof dir) == 1 &&
++            (strcmp(dir, "down") == 0 || strcmp(dir, "up") == 0)) op_copy(r, n, b, 0);
++        else reply_err(b, XE_ACCESS, "DriveHop only permits guarded SMB copies.");
      } else if (strcmp(op, "scan") == 0) {
          op_scan(r, n, b);
-+    } else if (strcmp(op, "mkdir") == 0 || strcmp(op, "remove") == 0) {
-+        reply_err(b, XE_ACCESS, "DriveHop keeps NAS shares read-only.");
++    } else if (strcmp(op, "mkdir") == 0) {
++        op_simple(op, r, n, b);
++    } else if (strcmp(op, "remove") == 0) {
++        reply_err(b, XE_ACCESS, "DriveHop never deletes from NAS shares.");
      } else if (strcmp(op, "job") == 0 || strcmp(op, "cancel") == 0) {
          int rc;
          if (sj_str(r, n, "job", job, sizeof job) != 1) {
-@@ -655,7 +657,7 @@ int main(void) {
+@@ -655,7 +660,7 @@ int main(void) {
      signal(SIGPIPE, SIG_IGN);
      umask(0);
      detach_stdio();

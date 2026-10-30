@@ -70,12 +70,13 @@ jobs:
           PATH="$PWD/.venv/bin:$PATH" .venv/bin/python tools/build_ps5.py \
             --app-dir ../DriveHop/app/drivehop \
             --llvm "$DRIVEHOP_LLVM_BIN"
-      - name: Build bundled read-only SMB helper
+      - name: Build bundled DriveHop SMB helper
         run: |
           git clone https://github.com/phantomptr/ps5upload.git ps5upload
           git -C ps5upload checkout 0cf022b71f466efdec133f56a9e4c3d74f0e94eb
           test "$(git -C ps5upload rev-parse HEAD)" = "0cf022b71f466efdec133f56a9e4c3d74f0e94eb"
           git -C ps5upload apply "$GITHUB_WORKSPACE/DriveHop/smb/ps5upload-drivehop.patch"
+          git -C ps5upload apply "$GITHUB_WORKSPACE/DriveHop/smb/drivehop-resume.patch"
           make -C ps5upload/payload/smb PS5_PAYLOAD_SDK="$GITHUB_WORKSPACE/ps5-react/.deps/sdk/ps5-payload-sdk"
           cp ps5upload/payload/smb/ps5upload-smb.elf ps5-react/dist/PPSA99777/drivehop-smb.elf
           test -s ps5-react/dist/PPSA99777/drivehop-smb.elf
@@ -84,19 +85,19 @@ jobs:
           ps5-react/.venv/bin/pip install 'lz4==4.4.4'
           mkdir -p build/installer
           ps5-react/.venv/bin/python DriveHop/installer/pack_payload.py \
-            ps5-react/dist/PPSA99777 build/installer/drivehop-v0.7.0.payload
+            ps5-react/dist/PPSA99777 build/installer/drivehop-v0.8.0.payload
           payload_sdk="$GITHUB_WORKSPACE/ps5-react/.deps/sdk/ps5-payload-sdk"
-          payload="$GITHUB_WORKSPACE/build/installer/drivehop-v0.7.0.payload"
+          payload="$GITHUB_WORKSPACE/build/installer/drivehop-v0.8.0.payload"
           "$payload_sdk/bin/prospero-clang" -c \
             -DDRIVEHOP_PAYLOAD_PATH=\"$payload\" \
             -o build/installer/embed.o DriveHop/installer/embed.S
           "$payload_sdk/bin/prospero-clang" -std=gnu11 -O2 -Wall -Wextra -Werror \
-            -DDRIVEHOP_VERSION=\"0.7.0\" \
-            -o build/installer/DriveHop-Installer-v0.7.0.elf \
+            -DDRIVEHOP_VERSION=\"0.8.0\" \
+            -o build/installer/DriveHop-Installer-v0.8.0.elf \
             DriveHop/installer/installer.c build/installer/embed.o \
             -lSceNet -lSceNotification
-          "$payload_sdk/bin/prospero-strip" build/installer/DriveHop-Installer-v0.7.0.elf
-          test -s build/installer/DriveHop-Installer-v0.7.0.elf
+          "$payload_sdk/bin/prospero-strip" build/installer/DriveHop-Installer-v0.8.0.elf
+          test -s build/installer/DriveHop-Installer-v0.8.0.elf
       - name: Package verified release
         run: |
           test -d ps5-react/dist/PPSA99777
@@ -106,12 +107,12 @@ jobs:
             exit 1
           fi
           mkdir release
-          cp build/installer/DriveHop-Installer-v0.7.0.elf release/
-          ditto -c -k --sequesterRsrc --keepParent ps5-react/dist/PPSA99777 release/DriveHop-PPSA99777-v0.7.0.zip
-          python3 -c 'import pathlib,sys,zipfile; p=pathlib.Path("release/DriveHop-PPSA99777-v0.7.0.zip"); bad=[(i.filename, oct((i.external_attr >> 16) & 0o777)) for i in zipfile.ZipFile(p).infolist() if ((i.external_attr >> 16) & 0o777) != 0o777]; print("Verified ZIP mode 0777 for every entry") if not bad else (print("Invalid ZIP permissions:", bad, file=sys.stderr) or sys.exit(1))'
-          tar -czf release/DriveHop-PPSA99777-v0.7.0-permissions.tar.gz -C ps5-react/dist PPSA99777
-          git -C DriveHop archive --format=zip --output=../release/DriveHop-source-v0.7.0.zip HEAD
-          tar -czf release/DriveHop-SMB-source-v0.7.0.tar.gz -C ps5upload \
+          cp build/installer/DriveHop-Installer-v0.8.0.elf release/
+          ditto -c -k --sequesterRsrc --keepParent ps5-react/dist/PPSA99777 release/DriveHop-PPSA99777-v0.8.0.zip
+          python3 -c 'import pathlib,sys,zipfile; p=pathlib.Path("release/DriveHop-PPSA99777-v0.8.0.zip"); bad=[(i.filename, oct((i.external_attr >> 16) & 0o777)) for i in zipfile.ZipFile(p).infolist() if ((i.external_attr >> 16) & 0o777) != 0o777]; print("Verified ZIP mode 0777 for every entry") if not bad else (print("Invalid ZIP permissions:", bad, file=sys.stderr) or sys.exit(1))'
+          tar -czf release/DriveHop-PPSA99777-v0.8.0-permissions.tar.gz -C ps5-react/dist PPSA99777
+          git -C DriveHop archive --format=zip --output=../release/DriveHop-source-v0.8.0.zip HEAD
+          tar -czf release/DriveHop-SMB-source-v0.8.0.tar.gz -C ps5upload \
             LICENSE README.md payload/smb payload/include payload/src/pkg_info.c payload/third_party/libsmb2 payload/sdk-crt.mk
           if test -f ps5-react/dist/PPSA99777.receipt.json; then
             cp ps5-react/dist/PPSA99777.receipt.json release/
@@ -120,7 +121,7 @@ jobs:
           shasum -a 256 * > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: DriveHop-PPSA99777-v0.7.0
+          name: DriveHop-PPSA99777-v0.8.0
           path: release/
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
