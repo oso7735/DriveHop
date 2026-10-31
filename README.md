@@ -7,6 +7,11 @@ copy or move it in either direction.
 
 This project is independent homebrew and is not affiliated with Sony.
 
+## Support DriveHop
+
+If DriveHop has been useful to you, you can support its continued development
+through [PayPal](https://paypal.me/ChristianOsorio674).
+
 ## What is implemented
 
 - Polished native 1080p/4K PS5 interface built with PS5 React.
