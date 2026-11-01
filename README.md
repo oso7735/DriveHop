@@ -218,6 +218,11 @@ diagnostic log export that can be attached to bug reports.
 - `tests/` — host-side behavior tests.
 - `docs/FORMAT-RESEARCH.md` — supported-format decision record.
 
+## Contributors
+
+- [OpenAI Codex](https://openai.com/codex/) — development, interface,
+  testing, and build assistance.
+
 ## License
 
 DriveHop is GPL-3.0-or-later. PS5 React and its bundled dependencies retain
