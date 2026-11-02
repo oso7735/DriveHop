@@ -2,6 +2,9 @@
 
 export const IMAGE_EXTENSIONS = Object.freeze(['.ffpkg', '.exfat', '.ffpfs', '.ffpfsc']);
 export const DRIVEHOP_TITLE_ID = 'PPSA99777';
+const KNOWN_EMULATOR_IDS = new Set(['PPSA99009', 'PPSA99169', 'PPSA99360', 'PPSA99922']);
+const EMULATOR_NAME = /(?:retroarch|emulationstation|emulator|\bemu\b|snes9x|ps5sx2|pcsx2|pemu|pfbneo|pgen|pnes|psnes|ppsspp|flycast|scummvm|mame|dolphin|cemu|azahar|eden)/i;
+const HOMEBREW_APP_NAME = /(?:homebrew|payload|itemzflow|prospero\s*store|orbit\s*(?:store|zero)|zftpd|ftps5|websrv|kstuff|etahen|lz4\s*compression|overdrive)/i;
 
 export function compareVersions(left, right) {
   const parts = value => String(value || '').trim().replace(/^v/i, '').split(/[.-]/).map(part => /^\d+$/.test(part) ? Number(part) : part);
@@ -81,6 +84,23 @@ export function isDriveHopApp(game) {
   return titleId === DRIVEHOP_TITLE_ID || path === `/DATA/HOMEBREW/${DRIVEHOP_TITLE_ID}`;
 }
 
+// Classification is deliberately conservative. Unknown folders remain games so they
+// stay visible under All instead of disappearing behind the Apps filter.
+export function libraryTypeFor(item) {
+  if (!item || item.kind === 'image') return 'game';
+  const titleId = String(item.titleId || titleIdFrom(item.sourceName || item.path)).toUpperCase();
+  const identity = `${item.name || ''} ${item.sourceName || ''}`;
+  if (KNOWN_EMULATOR_IDS.has(titleId) || EMULATOR_NAME.test(identity)) return 'emulator';
+  if (HOMEBREW_APP_NAME.test(identity)) return 'app';
+  return 'game';
+}
+
+export function filterLibraryItems(items, filter = 'all') {
+  if (filter === 'apps') return (items || []).filter(item => ['app', 'emulator'].includes(item.libraryType || libraryTypeFor(item)));
+  if (filter === 'games') return (items || []).filter(item => (item.libraryType || libraryTypeFor(item)) === 'game');
+  return items || [];
+}
+
 export function displayNameFromFile(name) {
   const ext = extension(name);
   const withoutExtension = ext ? name.slice(0, -ext.length) : name;
@@ -118,15 +138,16 @@ export function enrichGames(games, catalog, baseUrl = 'http://127.0.0.1:10101', 
   return (games || []).map(game => {
     const titleId = String(game.titleId || '').toUpperCase();
     const metadata = (titleId && byTitleId.get(titleId)) || byPath.get(joinPath(game.path || ''));
-    if (!metadata) return game;
+    if (!metadata) return {...game, libraryType: game.libraryType || libraryTypeFor(game)};
     const resolvedId = String(metadata.title_id || metadata.titleId || titleId).toUpperCase();
     const resolvedName = String(metadata.name || metadata.title_name || '').trim();
-    return {
+    const enriched = {
       ...game,
       titleId: resolvedId || titleId,
       name: resolvedName && resolvedName.toUpperCase() !== resolvedId ? resolvedName : game.name,
       iconUrl: cacheBustedUrl(absoluteHttpUrl(metadata.icon_url || metadata.iconUrl, baseUrl), cacheToken),
     };
+    return {...enriched, libraryType: libraryTypeFor(enriched)};
   }).sort((a, b) => a.name.localeCompare(b.name));
 }
 

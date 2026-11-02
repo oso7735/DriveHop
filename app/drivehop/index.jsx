@@ -7,7 +7,7 @@ import {
 } from '@ps5-react/core';
 import {
   DRIVE_SPECS, activeSelection, basename, destinationPath, displayNameFromFile, etaText,
-  enrichGames, formatBytes, formatForName, isAllowedImage, isDriveHopApp, isPartial, joinPath, libraryPaths,
+  enrichGames, filterLibraryItems, formatBytes, formatForName, isAllowedImage, isDriveHopApp, isPartial, joinPath, libraryPaths, libraryTypeFor,
   driveHopUpdateFromRelease, duplicateTitleIds, percentOf, queueSpaceNeeds, sameIdentity, shouldDeleteSource, speedText,
   titleIdFrom, transferKey, transferResumeToken, updateManualListText,
 } from './library.js';
@@ -33,6 +33,8 @@ const SMB_CATALOG_FILE = `${SMB_LIBRARY_DIR}/drivehop.json`;
 const CURRENT_VERSION = '0.8.0';
 const UPDATE_API = 'https://api.github.com/repos/oso7735/DriveHop/releases/latest';
 const UPDATE_DIR = `${STATE_DIR}/update`;
+const LIBRARY_FILTERS = Object.freeze(['all', 'games', 'apps']);
+const LIBRARY_FILTER_LABELS = Object.freeze({all: 'All items', games: 'Games', apps: 'Apps'});
 
 const THEME_TOKENS = Object.freeze({
   midnight: {},
@@ -157,9 +159,13 @@ async function waitSmbJob(key, id, onProgress) {
   }
 }
 
+function defaultPersistentState() {
+  return {queue: [], interrupted: [], history: [], transferMode: 'verified', theme: 'midnight', deleteAfterCopy: false, nasWriteEnabled: true, libraryFilter: 'all'};
+}
+
 function loadPersistentState() {
   try {
-    if (!FileSystem.exists(STATE_FILE)) return {queue: [], interrupted: [], history: [], transferMode: 'verified', theme: 'midnight', deleteAfterCopy: false, nasWriteEnabled: true};
+    if (!FileSystem.exists(STATE_FILE)) return defaultPersistentState();
     const state = JSON.parse(FileSystem.readFile(STATE_FILE));
     return {
       queue: Array.isArray(state.queue) ? state.queue.filter(item => !isDriveHopApp(item.game)) : [],
@@ -169,18 +175,19 @@ function loadPersistentState() {
       theme: Object.prototype.hasOwnProperty.call(THEME_TOKENS, state.theme) ? state.theme : 'midnight',
       deleteAfterCopy: state.deleteAfterCopy === true,
       nasWriteEnabled: state.nasWriteEnabled !== false,
+      libraryFilter: ['all', 'games', 'apps'].includes(state.libraryFilter) ? state.libraryFilter : 'all',
     };
   } catch (err) {
-    return {queue: [], interrupted: [], history: [], transferMode: 'verified', theme: 'midnight', deleteAfterCopy: false, nasWriteEnabled: true};
+    return defaultPersistentState();
   }
 }
 
-function savePersistentState(queue, interrupted, history, transferMode, theme, deleteAfterCopy, nasWriteEnabled) {
+function savePersistentState(queue, interrupted, history, transferMode, theme, deleteAfterCopy, nasWriteEnabled, libraryFilter) {
   try {
     FileSystem.mkdir(STATE_DIR, {recursive: true});
     // Transfer recovery never needs to retain a NAS password; remembered SMB credentials
     // live only in the mode-0600 SMB settings file.
-    FileSystem.writeFile(STATE_FILE, JSON.stringify({queue, interrupted, history, transferMode, theme, deleteAfterCopy, nasWriteEnabled}, (key, value) => key === 'password' ? '' : value, 2), {sync: true});
+    FileSystem.writeFile(STATE_FILE, JSON.stringify({queue, interrupted, history, transferMode, theme, deleteAfterCopy, nasWriteEnabled, libraryFilter}, (key, value) => key === 'password' ? '' : value, 2), {sync: true});
   } catch (err) {
     console.log(`DriveHop: save state failed: ${err.message}`);
   }
@@ -211,6 +218,16 @@ function isGameFolder(path) {
   }
 }
 
+const EMULATOR_DATA_FOLDERS = Object.freeze(['content', 'roms', 'system', 'bios', 'cores', 'config', 'savefiles', 'savestates']);
+
+function bundledEmulatorData(path) {
+  const found = [];
+  for (const name of EMULATOR_DATA_FOLDERS) {
+    try { if (FileSystem.exists(joinPath(path, name))) found.push(name); } catch (err) { /* inaccessible data is not advertised */ }
+  }
+  return found;
+}
+
 function scanDrive(drive) {
   if (!drive) return [];
   const found = new Map();
@@ -235,6 +252,7 @@ function scanDrive(drive) {
           size: Number(entry.size || 0), kind: 'image', modified: entry.modified || 0,
           identity: {device: entry.device, inode: entry.inode},
         };
+        game.libraryType = libraryTypeFor(game);
         if (!isDriveHopApp(game)) found.set(path, game);
       } else if (entry.isDirectory && isGameFolder(path)) {
         const param = safeReadParam(path);
@@ -244,6 +262,8 @@ function scanDrive(drive) {
           kind: 'folder', modified: entry.modified || 0,
           identity: {device: entry.device, inode: entry.inode},
         };
+        game.libraryType = libraryTypeFor(game);
+        game.bundledData = game.libraryType === 'emulator' ? bundledEmulatorData(path) : [];
         if (!isDriveHopApp(game)) found.set(path, game);
       }
     }
@@ -441,9 +461,9 @@ function GameRow({game, selected, marked, duplicate, side, index, onSelect, onTo
       <View className="flex-1 gap-1 overflow-hidden">
         <Text className="font-semi text-white text-[17px]" numberOfLines={1}>{game.name}</Text>
         <View className="flex-row items-center gap-2">
-          <Text className="font-semi text-[11px] text-mint">{game.format}</Text>
+          <Text className="font-semi text-[11px] text-mint">{game.libraryType === 'emulator' ? 'EMULATOR' : game.libraryType === 'app' ? 'APP' : game.format}</Text>
           {!!game.titleId && <Text className={`${MUTED} text-[12px]`}>{game.titleId}</Text>}
-          <Text className={`${MUTED} text-[12px]`}>{game.size ? formatBytes(game.size) : 'Game folder'}</Text>
+          <Text className={`${MUTED} text-[12px]`}>{game.size ? formatBytes(game.size) : game.libraryType === 'emulator' ? game.bundledData?.length ? `${game.bundledData.length} data folders included` : 'Complete emulator folder' : game.libraryType === 'app' ? 'Complete app folder' : 'Game folder'}</Text>
           {duplicate && <View className="h-[20px] px-2 rounded-full bg-panel items-center justify-center"><Text className="font-semi text-[9px] text-violet">ON BOTH</Text></View>}
         </View>
       </View>
@@ -454,21 +474,21 @@ function GameRow({game, selected, marked, duplicate, side, index, onSelect, onTo
   );
 }
 
-function EmptyPane({drive}) {
+function EmptyPane({drive, filter}) {
   return (
     <View className="flex-1 items-center justify-center gap-3 px-12">
       <View className="w-[60px] h-[46px] rounded-xl border-[2px] border-edge bg-raised items-center justify-center">
         <View className={`w-[25px] h-[5px] rounded-full ${drive ? 'bg-mint' : 'bg-muted'}`} />
       </View>
-      <Text className="font-semi text-[24px] text-white">{drive ? 'No games found' : 'Choose a drive'}</Text>
+      <Text className="font-semi text-[24px] text-white">{drive ? filter === 'apps' ? 'No apps found' : filter === 'games' ? 'No games found' : 'No compatible items found' : 'Choose a drive'}</Text>
       <Text className={`${MUTED} text-[14px] text-center`}>
-        {drive ? 'Compatible game folders and images will appear here.' : 'Select internal, M.2, USB or network storage.'}
+        {drive ? filter === 'apps' ? 'Recognized homebrew apps and emulators will appear here.' : 'Compatible game folders and images will appear here.' : 'Select internal, M.2, USB or network storage.'}
       </Text>
     </View>
   );
 }
 
-function DrivePane({side, drive, games, selected, markedKeys, active, duplicateIds, onChooseDrive, onSelect, onToggle, onRefresh, onSpeedTest, onOptionsRequest}) {
+function DrivePane({side, drive, games, selected, markedKeys, active, duplicateIds, libraryFilter, onChooseDrive, onSelect, onToggle, onRefresh, onSpeedTest, onOptionsRequest}) {
   const driveFocusKey = `${side}-drive-selector`;
   const topActionFocusKey = side === 'left' ? 'nas-action' : 'cache-action';
   return (
@@ -502,10 +522,10 @@ function DrivePane({side, drive, games, selected, markedKeys, active, duplicateI
           </View>
         </ScrollView>
       ) : (
-        <EmptyPane drive={drive} />
+        <EmptyPane drive={drive} filter={libraryFilter} />
       )}
       <View className="h-[36px] px-5 border-t-[1px] border-edge flex-row items-center justify-between">
-        <Text className={`${markedKeys.length ? 'font-semi text-violet' : MUTED} text-[13px]`}>{markedKeys.length ? `${markedKeys.length} selected` : `${games.length} ${games.length === 1 ? 'game' : 'games'}`}</Text>
+        <Text className={`${markedKeys.length ? 'font-semi text-violet' : MUTED} text-[13px]`}>{markedKeys.length ? `${markedKeys.length} selected` : `${games.length} ${libraryFilter === 'apps' ? games.length === 1 ? 'app' : 'apps' : games.length === 1 ? 'item' : 'items'}`}</Text>
         {selected
           ? <View className="flex-row items-center gap-2"><OptionsMark /><Text className="font-semi text-mint text-[12px]">Actions</Text></View>
           : <Text className={`${MUTED} text-[12px]`}>{drive ? drive.remote ? 'SMB share' : `${drive.root}/homebrew` : ''}</Text>}
@@ -1130,6 +1150,7 @@ function App() {
   const [theme, setTheme] = useState(savedState.theme);
   const [deleteAfterCopy, setDeleteAfterCopy] = useState(savedState.deleteAfterCopy);
   const [nasWriteEnabled, setNasWriteEnabled] = useState(savedState.nasWriteEnabled);
+  const [libraryFilter, setLibraryFilter] = useState(savedState.libraryFilter);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [gameOptions, setGameOptions] = useState(null);
   const [deleteRequest, setDeleteRequest] = useState(null);
@@ -1288,7 +1309,7 @@ function App() {
     return () => { clearInterval(timer); LocalServer.stop(); };
   }, [smbOpen]);
 
-  useEffect(() => { savePersistentState(queue, interrupted, history, transferMode, theme, deleteAfterCopy, nasWriteEnabled); }, [queue, interrupted, history, transferMode, theme, deleteAfterCopy, nasWriteEnabled]);
+  useEffect(() => { savePersistentState(queue, interrupted, history, transferMode, theme, deleteAfterCopy, nasWriteEnabled, libraryFilter); }, [queue, interrupted, history, transferMode, theme, deleteAfterCopy, nasWriteEnabled, libraryFilter]);
 
   useEffect(() => {
     const timer = setTimeout(() => checkForUpdate({background: true}), 1800);
@@ -1352,7 +1373,7 @@ function App() {
       catch (err) { games = []; }
     } else games = enrichGames(scanDrive(drive), catalogRef.current, SHADOWMOUNT_API, cacheTokenRef.current);
     setLibraries(previous => ({...previous, [side]: games}));
-    setSelected(previous => ({...previous, [side]: games[0] || null}));
+    setSelected(previous => ({...previous, [side]: filterLibraryItems(games, libraryFilter)[0] || null}));
     setMarked(previous => ({...previous, [side]: []}));
     setActiveSide(side);
     setPicker(null);
@@ -1420,7 +1441,18 @@ function App() {
   const sourceDrive = activeSide === 'left' ? leftDrive : rightDrive;
   const targetDrive = activeSide === 'left' ? rightDrive : leftDrive;
   const chosenGame = selected[activeSide];
-  const chosenGames = activeSelection(libraries[activeSide], marked[activeSide], chosenGame);
+  const shownLibraries = useMemo(() => ({
+    left: filterLibraryItems(libraries.left, libraryFilter),
+    right: filterLibraryItems(libraries.right, libraryFilter),
+  }), [libraries, libraryFilter]);
+  const chosenGames = activeSelection(shownLibraries[activeSide], marked[activeSide], chosenGame);
+  const cycleLibraryFilter = () => {
+    const next = LIBRARY_FILTERS[(LIBRARY_FILTERS.indexOf(libraryFilter) + 1) % LIBRARY_FILTERS.length];
+    const nextShown = {left: filterLibraryItems(libraries.left, next), right: filterLibraryItems(libraries.right, next)};
+    setLibraryFilter(next);
+    setMarked({left: [], right: []});
+    setSelected({left: nextShown.left[0] || null, right: nextShown.right[0] || null});
+  };
 
   const requestTransfer = async mode => {
     if (!chosenGames.length || !sourceDrive || !targetDrive) return;
@@ -1797,7 +1829,7 @@ function App() {
     return true;
   };
 
-  const selectedCount = useMemo(() => libraries.left.length + libraries.right.length, [libraries]);
+  const selectedCount = useMemo(() => shownLibraries.left.length + shownLibraries.right.length, [shownLibraries]);
   const duplicateIds = useMemo(() => duplicateTitleIds(libraries.left, libraries.right), [libraries]);
   const cacheDisabled = job?.status === 'running' || speedTest?.status === 'running';
   const updateBusy = ['checking', 'downloading', 'installing'].includes(updateState.status);
@@ -1822,6 +1854,7 @@ function App() {
           </View>
           <View className="flex-row items-center gap-2">
             <View className={`h-[28px] px-3 rounded-full items-center justify-center ${transferMode === 'turbo' ? 'bg-raised' : 'bg-night'}`}><Text className={`font-semi text-[9px] ${transferMode === 'turbo' ? 'text-violet' : 'text-mint'}`}>{transferMode === 'turbo' ? 'TURBO' : 'VERIFIED'}</Text></View>
+            <HeaderAction label={LIBRARY_FILTER_LABELS[libraryFilter]} highlighted={libraryFilter !== 'all'} tone="violet" onPress={cycleLibraryFilter} />
             <HeaderAction label="NAS / SMB" disabled={cacheDisabled} focusKey="nas-action" nextFocusDown="left-drive-selector"
               onPress={() => { if (!cacheDisabled) { setSmbState({status: 'setup', message: ''}); setSmbOpen(true); } }} />
             <HeaderAction label="Cache" disabled={cacheDisabled} focusKey="cache-action" nextFocusDown="right-drive-selector"
@@ -1837,25 +1870,25 @@ function App() {
               <SettingsMark />
             </View>
             <View className="min-w-[94px] items-end gap-[2px]">
-              <Text className={`${markedCount ? 'font-semi text-violet' : 'font-semi text-white'} text-[12px]`}>{markedCount ? `${markedCount} selected` : `${selectedCount} games`}</Text>
+              <Text className={`${markedCount ? 'font-semi text-violet' : 'font-semi text-white'} text-[12px]`}>{markedCount ? `${markedCount} selected` : `${selectedCount} items`}</Text>
               <Text className={`${MUTED} text-[9px]`}>{drives.length} storage locations</Text>
             </View>
           </View>
         </View>
 
         <View className="flex-1 px-10 py-5 flex-row justify-center">
-          <DrivePane side="left" drive={leftDrive} games={libraries.left} selected={selected.left} active={activeSide === 'left'}
+          <DrivePane side="left" drive={leftDrive} games={shownLibraries.left} selected={selected.left} active={activeSide === 'left'} libraryFilter={libraryFilter}
             markedKeys={marked.left} duplicateIds={duplicateIds} onChooseDrive={setPicker} onSelect={selectGame} onToggle={toggleGame} onRefresh={side => refresh(side)} onSpeedTest={runSpeedTest} onOptionsRequest={requestGameOptions} />
           <Shuttle activeSide={activeSide} selectionCount={targetDrive ? chosenGames.length : 0}
             nasSource={!!sourceDrive?.remote} nasTarget={!!targetDrive?.remote} nasWriteEnabled={nasWriteEnabled} transferMode={transferMode}
             onToggleMode={() => setTransferMode(previous => previous === 'turbo' ? 'verified' : 'turbo')} onTransfer={requestTransfer} />
-          <DrivePane side="right" drive={rightDrive} games={libraries.right} selected={selected.right} active={activeSide === 'right'}
+          <DrivePane side="right" drive={rightDrive} games={shownLibraries.right} selected={selected.right} active={activeSide === 'right'} libraryFilter={libraryFilter}
             markedKeys={marked.right} duplicateIds={duplicateIds} onChooseDrive={setPicker} onSelect={selectGame} onToggle={toggleGame} onRefresh={side => refresh(side)} onSpeedTest={runSpeedTest} onOptionsRequest={requestGameOptions} />
         </View>
 
         <View className="h-[52px] px-10 border-t-[1px] border-edge bg-panel flex-row items-center justify-between">
           <View className="flex-row items-center gap-3"><DpadMark /><Text className={`${MUTED} text-[12px] mr-2`}>Navigate</Text><CircleMark /><Text className={`${MUTED} text-[12px]`}>Exit</Text></View>
-          <Text className={`${MUTED} text-[12px]`}>{duplicateIds.size ? `${duplicateIds.size} duplicate title${duplicateIds.size === 1 ? '' : 's'} • ` : ''}Folder • FFPKG • exFAT • FFPFS • FFPFSC</Text>
+          <Text className={`${MUTED} text-[12px]`}>{duplicateIds.size ? `${duplicateIds.size} duplicate title${duplicateIds.size === 1 ? '' : 's'} • ` : ''}Games • Apps • Emulators • FFPKG • exFAT • FFPFS • FFPFSC</Text>
         </View>
 
         {!!picker && <DrivePicker side={picker} drives={drives} current={picker === 'left' ? leftDrive : rightDrive}

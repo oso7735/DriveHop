@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   absoluteHttpUrl, activeSelection, basename, cacheBustedUrl, destinationPath, displayNameFromFile, extension, formatBytes, formatForName,
-  duplicateTitleIds, enrichGames, isAllowedImage, isDriveHopApp, isPartial, joinPath, libraryPaths, percentOf,
+  duplicateTitleIds, enrichGames, filterLibraryItems, isAllowedImage, isDriveHopApp, isPartial, joinPath, libraryPaths, libraryTypeFor, percentOf,
   compareVersions, driveHopUpdateFromRelease, queueSpaceNeeds, sameIdentity, shouldDeleteSource, titleIdFrom, transferKey, transferResumeToken, updateManualListText,
 } from '../app/drivehop/library.js';
 
@@ -24,6 +24,7 @@ test('enriches filename-only games with ShadowMount names and artwork', () => {
   assert.deepEqual(enrichGames(games, catalog)[0], {
     ...games[0], name: 'Ratchet & Clank: Rift Apart', titleId: 'PPSA01474',
     iconUrl: 'http://127.0.0.1:10101/api/v1/games/icon?title_id=PPSA01474&size=thumb',
+    libraryType: 'game',
   });
   assert.equal(absoluteHttpUrl('https://covers.example/game.png', 'http://127.0.0.1:10101'), 'https://covers.example/game.png');
   assert.equal(cacheBustedUrl('http://127.0.0.1/icon.png?size=thumb', 42),
@@ -67,6 +68,19 @@ test('uses a safe conventional homebrew destination', () => {
   assert.equal(destinationPath(usb, 'PPSA00001.exfat'), '/mnt/usb1/homebrew/PPSA00001.exfat');
   assert.deepEqual(libraryPaths(usb), ['/mnt/usb1/homebrew', '/mnt/usb1/etaHEN/games', '/mnt/usb1']);
   assert.deepEqual(libraryPaths({root: '/data', kind: 'internal'}), ['/data/homebrew', '/data/etaHEN/games']);
+});
+
+test('recognizes emulator apps without hiding unknown game folders', () => {
+  const retroarch = {kind: 'folder', name: 'RetroArch', sourceName: 'PPSA99169', titleId: 'PPSA99169'};
+  const utility = {kind: 'folder', name: 'Payload Manager', sourceName: 'PPSA99000'};
+  const game = {kind: 'folder', name: 'My extracted game', sourceName: 'PPSA12345'};
+  const image = {kind: 'image', name: 'Game', sourceName: 'Game.exfat'};
+  assert.equal(libraryTypeFor(retroarch), 'emulator');
+  assert.equal(libraryTypeFor(utility), 'app');
+  assert.equal(libraryTypeFor(game), 'game');
+  assert.equal(libraryTypeFor(image), 'game');
+  assert.deepEqual(filterLibraryItems([retroarch, utility, game, image], 'apps'), [retroarch, utility]);
+  assert.deepEqual(filterLibraryItems([retroarch, utility, game, image], 'games'), [game, image]);
 });
 
 test('manual list move replaces old and same-title paths while preserving comments', () => {

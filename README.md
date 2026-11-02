@@ -38,6 +38,11 @@ through [PayPal](https://paypal.me/ChristianOsorio674).
   SMB rename. The final game name is never used for an incomplete upload.
 - Dual-pane libraries that scan each drive's `homebrew`, `etaHEN/games`, and
   (for removable drives) top-level directory.
+- An **All / Games / Apps** library filter. Recognized emulator titles such as
+  RetroArch, PS5-ECAM and Snes9x are labeled separately, and transfers preserve
+  their complete title folders. Conventional in-title `content`, `roms`,
+  `system`, `bios`, `cores`, `config`, `savefiles` and `savestates` folders are
+  shown as included data because they move with the app automatically.
 - Vertical navigation stays inside its current pane; Left/Right explicitly
   switches panes.
 - Cross toggles selection in either pane. Copy and Move preflight the whole
