@@ -134,7 +134,7 @@ PATH="$PWD/.venv/bin:$PATH" npm run build -- --app-dir ../DriveHop/app/drivehop
 
 The result is written under PS5 React's `dist/PPSA99777` directory. From Windows,
 use the included GitHub Actions workflow: GitHub's `macos-15-intel` runner
-produces a checksummed `DriveHop-PPSA99777-v0.8.0` artifact. See
+produces a checksummed `DriveHop-PPSA99777-v0.9.0` artifact. See
 [`docs/BUILD-ON-GITHUB.md`](docs/BUILD-ON-GITHUB.md).
 
 Run the platform-neutral model tests anywhere Node.js is available:
@@ -145,7 +145,7 @@ npm test
 
 ## Install on the PS5
 
-1. Download `DriveHop-Installer-v0.8.0.elf` from the build artifact.
+1. Download `DriveHop-Installer-v0.9.0.elf` from the build artifact.
 2. Close DriveHop if it is already running, then send the installer to the PS5's
    ELF loader on port `9021` using Payload Manager or another payload sender.
 3. Wait for the installation notification. The installer stages and verifies
@@ -163,7 +163,7 @@ startup. Open **Updates** to check manually, download a verified installer, and
 select **Install and close DriveHop**. The final step requires an ELF loader on
 port `9021`, just like a manual installer launch.
 
-For recovery or manual installation, extract `DriveHop-PPSA99777-v0.8.0.zip`
+For recovery or manual installation, extract `DriveHop-PPSA99777-v0.9.0.zip`
 and copy its complete `PPSA99777` folder to `/data/homebrew/PPSA99777`.
 
 Release archives explicitly store mode `0777` on every directory and file. The

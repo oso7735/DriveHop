@@ -30,7 +30,7 @@ const SPEED_BYTES = 4 * 1024 * 1024;
 const SHADOWMOUNT_API = 'http://127.0.0.1:10101';
 const SMB_CONFIG_FILE = `${SMB_STATE_DIR}/config.json`;
 const SMB_CATALOG_FILE = `${SMB_LIBRARY_DIR}/drivehop.json`;
-const CURRENT_VERSION = '0.8.0';
+const CURRENT_VERSION = '0.9.0';
 const UPDATE_API = 'https://api.github.com/repos/oso7735/DriveHop/releases/latest';
 const UPDATE_DIR = `${STATE_DIR}/update`;
 const LIBRARY_FILTERS = Object.freeze(['all', 'games', 'apps']);
@@ -123,7 +123,7 @@ function saveSmbConfig(config) {
 
 function writeSmbKey(key) {
   FileSystem.mkdir(SMB_STATE_DIR, {recursive: true});
-  FileSystem.writeFile(SMB_KEY_FILE, `${key}\ndrivehop-0.8.0\n`, {sync: true});
+  FileSystem.writeFile(SMB_KEY_FILE, `${key}\ndrivehop-0.9.0\n`, {sync: true});
   FileSystem.chmod(SMB_KEY_FILE, 0o600);
 }
 

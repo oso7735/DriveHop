@@ -24,7 +24,7 @@
 #include <unistd.h>
 
 #ifndef DRIVEHOP_VERSION
-#define DRIVEHOP_VERSION "0.8.0"
+#define DRIVEHOP_VERSION "0.9.0"
 #endif
 
 #define INSTALL_ROOT "/data/homebrew/PPSA99777"
