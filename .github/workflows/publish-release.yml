@@ -1,0 +1,54 @@
+name: Publish DriveHop Release Asset
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful Build DriveHop workflow run ID
+        required: true
+        type: string
+      artifact_name:
+        description: Actions artifact containing the installer
+        required: true
+        type: string
+      tag:
+        description: Existing draft release tag
+        required: true
+        type: string
+      asset_name:
+        description: Installer filename inside the artifact
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish-asset:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download verified build artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.run_id }}
+          ARTIFACT_NAME: ${{ inputs.artifact_name }}
+        run: |
+          set -euo pipefail
+          mkdir release-input
+          gh run download "$RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "$ARTIFACT_NAME" \
+            --dir release-input
+
+      - name: Attach installer to draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          ASSET_NAME: ${{ inputs.asset_name }}
+        run: |
+          set -euo pipefail
+          test -s "release-input/$ASSET_NAME"
+          gh release upload "$TAG" "release-input/$ASSET_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
